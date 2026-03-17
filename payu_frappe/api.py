@@ -244,7 +244,11 @@ def get_checkout_details(request_id):
     settings = get_payu_settings()
 
     txnid = f"ITR-{doc.name}-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
-    amount = str(doc.service_amount or 0)
+    
+    # PayU strictly expects '2000' and not '2000.0' or the hash verification fails
+    amt_val = float(doc.service_amount or 0)
+    amount = str(int(amt_val)) if amt_val.is_integer() else str(amt_val)
+
 
     params = {
         "key": settings["key"],
