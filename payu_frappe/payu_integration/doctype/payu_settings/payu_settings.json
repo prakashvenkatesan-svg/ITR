@@ -1,0 +1,32 @@
+{
+    "actions": [],
+    "creation": "2026-03-17 10:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "merchant_key",
+        "merchant_salt",
+        "is_sandbox",
+        "sandbox_url",
+        "production_url"
+    ],
+    "fields": [
+        {"fieldname": "merchant_key", "fieldtype": "Data", "label": "Merchant Key", "reqd": 1},
+        {"fieldname": "merchant_salt", "fieldtype": "Password", "label": "Merchant Salt", "reqd": 1},
+        {"fieldname": "is_sandbox", "fieldtype": "Check", "label": "Use Sandbox (Test Mode)", "default": "1"},
+        {"fieldname": "sandbox_url", "fieldtype": "Data", "label": "Sandbox URL",
+            "default": "https://test.payu.in/_payment", "read_only": 1},
+        {"fieldname": "production_url", "fieldtype": "Data", "label": "Production URL",
+            "default": "https://secure.payu.in/_payment", "read_only": 1}
+    ],
+    "issingle": 1,
+    "modified": "2026-03-17 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "PayU Integration",
+    "name": "PayU Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1}
+    ],
+    "states": []
+}

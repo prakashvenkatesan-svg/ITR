@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Payment – Aionion Advisory</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7fb;
+               display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
+        .card { background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,.1);
+                padding:48px 40px; text-align:center; max-width:420px; width:100%; }
+        .spinner { width:52px; height:52px; border:5px solid #e0e7ef; border-top-color:#007bff;
+                   border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 24px; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        h2 { color:#1a2340; margin:0 0 8px; }
+        p { color:#6c757d; margin:0 0 16px; }
+        .error-icon { font-size:52px; margin-bottom:16px; }
+        #error-section { display:none; }
+        #error-msg { color:#e53935; font-weight:500; margin-top:8px; }
+        /* Hidden PayU form */
+        #payu-form { display:none; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <!-- Loading -->
+    <div id="loading-section">
+        <div class="spinner"></div>
+        <h2>Processing Request...</h2>
+        <p>Please wait while we prepare your secure payment page.</p>
+    </div>
+    <!-- Error -->
+    <div id="error-section">
+        <div class="error-icon">⚠️</div>
+        <h2>Something went wrong</h2>
+        <p id="error-msg">Could not process your payment request.</p>
+        <p style="font-size:13px;">Please contact support or try again later.</p>
+    </div>
+</div>
+
+<!-- Hidden PayU auto-submit form -->
+<form id="payu-form" method="post">
+    <input type="hidden" name="key" id="f_key">
+    <input type="hidden" name="txnid" id="f_txnid">
+    <input type="hidden" name="amount" id="f_amount">
+    <input type="hidden" name="productinfo" id="f_productinfo">
+    <input type="hidden" name="firstname" id="f_firstname">
+    <input type="hidden" name="email" id="f_email">
+    <input type="hidden" name="phone" id="f_phone">
+    <input type="hidden" name="surl" id="f_surl">
+    <input type="hidden" name="furl" id="f_furl">
+    <input type="hidden" name="hash" id="f_hash">
+    <input type="hidden" name="service_provider" value="payu_paisa">
+    <input type="hidden" name="udf1" id="f_udf1">
+    <input type="hidden" name="udf2" value="">
+    <input type="hidden" name="udf3" value="">
+    <input type="hidden" name="udf4" value="">
+    <input type="hidden" name="udf5" value="">
+</form>
+
+<script>
+(function () {
+    var params = new URLSearchParams(window.location.search);
+    var requestId = params.get('request');
+
+    if (!requestId) {
+        showError('Invalid payment link — no request ID found.');
+        return;
+    }
+
+    fetch('/api/method/payu_frappe.api.get_checkout_details?request_id=' + encodeURIComponent(requestId), {
+        headers: { 'X-Frappe-CSRF-Token': 'fetch' }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (!data.message) { showError('Could not fetch payment details.'); return; }
+        var p = data.message.params;
+        var url = data.message.url;
+
+        document.getElementById('payu-form').action = url;
+        document.getElementById('f_key').value          = p.key;
+        document.getElementById('f_txnid').value        = p.txnid;
+        document.getElementById('f_amount').value       = p.amount;
+        document.getElementById('f_productinfo').value  = p.productinfo;
+        document.getElementById('f_firstname').value    = p.firstname;
+        document.getElementById('f_email').value        = p.email;
+        document.getElementById('f_phone').value        = p.phone;
+        document.getElementById('f_surl').value         = p.surl;
+        document.getElementById('f_furl').value         = p.furl;
+        document.getElementById('f_hash').value         = p.hash;
+        document.getElementById('f_udf1').value         = p.udf1 || '';
+        document.getElementById('payu-form').submit();
+    })
+    .catch(function(err) { showError('Network error. Please try again.'); });
+
+    function showError(msg) {
+        document.getElementById('loading-section').style.display = 'none';
+        document.getElementById('error-section').style.display  = 'block';
+        document.getElementById('error-msg').innerText = msg;
+    }
+})();
+</script>
+</body>
+</html>

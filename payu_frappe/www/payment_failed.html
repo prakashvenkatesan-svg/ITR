@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Failed – Aionion Advisory</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #fce4ec 0%, #f4f7fb 100%);
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,.12);
+            padding: 56px 48px; text-align: center;
+            max-width: 460px; width: 100%;
+            animation: fadeIn .5s ease;
+        }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        .icon-circle {
+            width: 80px; height: 80px; border-radius: 50%;
+            background: linear-gradient(135deg, #e53935, #ef5350);
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px; font-size: 40px;
+            box-shadow: 0 4px 16px rgba(229,57,53,.35);
+        }
+        h1 { color: #b71c1c; font-size: 26px; margin-bottom: 12px; }
+        p  { color: #555; font-size: 15px; line-height: 1.6; margin-bottom: 28px; }
+        .btn {
+            display: inline-block; padding: 13px 36px;
+            background: linear-gradient(135deg, #e53935, #ef5350);
+            color: #fff; border-radius: 8px; text-decoration: none;
+            font-size: 15px; font-weight: 600;
+            box-shadow: 0 4px 12px rgba(229,57,53,.3);
+            transition: transform .2s, box-shadow .2s;
+            margin-right: 10px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(229,57,53,.4); }
+        .btn-outline {
+            display: inline-block; padding: 13px 36px;
+            border: 2px solid #e53935; color: #e53935;
+            border-radius: 8px; text-decoration: none;
+            font-size: 15px; font-weight: 600;
+            transition: transform .2s;
+        }
+        .btn-outline:hover { transform: translateY(-2px); background: #fce4ec; }
+        .note { font-size: 13px; color: #888; margin-top: 20px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="icon-circle">✕</div>
+    <h1>Payment Failed</h1>
+    <p>
+        Unfortunately your payment could not be processed.<br>
+        This could be due to a bank decline, timeout, or insufficient funds.
+        Please try again or contact us for assistance.
+    </p>
+    <a href="javascript:history.back()" class="btn">Try Again</a>
+    <a href="/" class="btn-outline">Go Home</a>
+    <p class="note">For assistance, reach us at support@aionionadvisory.com</p>
+</div>
+</body>
+</html>
