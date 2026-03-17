@@ -84,11 +84,11 @@ def submit_itr_details():
 
         # --- Section 3: Portal Access ---
         doc.previously_filed_with_aionion = (
-            data.get("previouslyFiledWithAionion") or data.get("previouslyFiled")
-        )
+            data.get("previouslyFiledWithAionion") or data.get("previouslyFiled") or "No"
+        ).capitalize()
         doc.registered_on_it_portal = (
-            data.get("registeredOnIncomeTax") or data.get("registeredOnPortal")
-        )
+            data.get("registeredOnIncomeTax") or data.get("registeredOnPortal") or "No"
+        ).capitalize()
         doc.willing_to_share_password = (
             data.get("sharePassword") or data.get("willingToSharePassword")
         )
