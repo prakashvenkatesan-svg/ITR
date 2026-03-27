@@ -27,13 +27,13 @@ def get_payu_settings():
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
     PayU hash formula (SHA-512):
-    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
+    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|||||SALT
     """
     hash_str = (
         f"{params['key']}|{params['txnid']}|{params['amount']}|"
         f"{params['productinfo']}|{params['firstname']}|{params['email']}|"
         f"{params.get('udf1','')}|{params.get('udf2','')}|{params.get('udf3','')}|"
-        f"{params.get('udf4','')}|{params.get('udf5','')}||||||{salt}"
+        f"{params.get('udf4','')}|{params.get('udf5','')}|||||{salt}"
     )
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
