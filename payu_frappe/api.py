@@ -257,7 +257,7 @@ def get_checkout_details(request_id):
     doc = frappe.get_doc("ITR Filing Submission", request_id)
     settings = get_payu_settings()
 
-    txnid = f"ITR-{doc.name}-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
+    txnid = f"{doc.name}-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
     
     # PayU strictly expects '2000' and not '2000.0' or the hash verification fails
     amt_val = float(doc.service_amount or 0)
