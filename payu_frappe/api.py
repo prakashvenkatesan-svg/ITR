@@ -1,5 +1,4 @@
 import frappe
-import json as _json
 from frappe.utils import get_url
 from payu_frappe.utils import get_payu_settings, generate_payu_hash, verify_payu_hash
 
@@ -14,6 +13,13 @@ def submit_itr_details():
     Receives ITR filing form data from the React website and creates a new
     ITR Filing Submission document in Frappe.
     """
+    frappe.response["headers"] = {
+        "Access-Control-Allow-Origin": "https://aionionadvisory.com",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+    }
+    
     try:
         data = {}
 
@@ -22,8 +28,9 @@ def submit_itr_details():
             form_data_str = frappe.form_dict.get("data")
             if form_data_str:
                 try:
-                    if isinstance(form_data_str, str):
-                        data = _json.loads(form_data_str)
+                    parsed = frappe.parse_json(form_data_str)
+                    if isinstance(parsed, dict):
+                        data = parsed
                 except Exception:
                     pass
 
@@ -32,7 +39,7 @@ def submit_itr_details():
                 try:
                     raw_bytes = frappe.request.get_data(as_text=True)
                     if raw_bytes and (raw_bytes.startswith("{") or raw_bytes.startswith("[")):
-                        data = _json.loads(raw_bytes)
+                        data = frappe.parse_json(raw_bytes)
                 except Exception:
                     pass
 
@@ -166,6 +173,8 @@ def submit_itr_details():
         else:
             doc.cash_deposited_range = cash_val
 
+        doc.service_amount = data.get("serviceAmount") or data.get("service_amount")
+
         doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
@@ -200,36 +209,41 @@ def generate_payment_link_and_send(request_id):
     """
     doc = frappe.get_doc("ITR Filing Submission", request_id)
 
-    if not doc.service_amount or doc.service_amount == "":
-        frappe.throw("Please select a valid Service Amount first.")
+    if not doc.service_amount:
+        frappe.throw("Service Amount is missing in this record.")
 
     if not doc.email:
-        frappe.throw("Email Address is required to send the payment link.")
+        frappe.throw("Client Email is missing. Please provide an email address to send the link.")
 
-    doc.payment_amount = int(doc.service_amount)
+    # payment_amount will be auto-synced by doc.save() -> doc.validate()
     payment_link = get_url(f"/payu_checkout?request={doc.name}")
+
+    if not payment_link:
+        frappe.throw("Failed to generate base URL for payment link.")
 
     doc.payment_link = payment_link
     doc.payment_status = "Link Generated"
     doc.save(ignore_permissions=True)
     frappe.db.commit()
 
+    email_body = (
+        f"<p>Dear {doc.full_name},</p>"
+        f"<p>Please click the link below to complete your payment of <b>\u20b9{doc.service_amount}</b>:</p>"
+        f'<p><a href="{payment_link}" style="background:#007bff;color:white;padding:10px 20px;'
+        f'text-decoration:none;border-radius:5px;">Pay Now</a></p>'
+        f"<p>Or copy this link: {payment_link}</p>"
+        f"<br/><p>Thank you,<br>Aionion Advisory Team</p>"
+    )
     try:
-        frappe.sendmail(
+        frappe.enqueue(
+            frappe.sendmail,
             recipients=[doc.email],
             subject=f"ITR Filing Payment Link - {doc.name}",
-            message=f"""
-                <p>Dear {doc.full_name},</p>
-                <p>Please click the link below to complete your payment of <b>₹{doc.service_amount}</b>:</p>
-                <p><a href="{payment_link}" style="background:#007bff;color:white;padding:10px 20px;
-                   text-decoration:none;border-radius:5px;">Pay Now</a></p>
-                <p>Or copy this link: {payment_link}</p>
-                <br/>
-                <p>Thank you,<br/>Aionion Advisory Team</p>
-            """,
+            message=email_body,
+            queue="short",
         )
     except Exception:
-        frappe.log_error("Email sending failed", "PayU Email Error")
+        frappe.log_error("Email enqueue failed", "PayU Email Error")
 
     return {"payment_link": payment_link, "status": "Link Generated"}
 
