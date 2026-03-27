@@ -3,6 +3,12 @@ import frappe
 
 
 def get_payu_settings():
+    # TEMPORARY OVERRIDE to guarantee matching keys from PayU dashboard
+    return {
+        "key": "Y4PFDw",
+        "salt": "eKoE70FdldqSFcOsgoOTouPKj68x9ee8",
+        "is_sandbox": 1
+    }
     """
     Reads PayU credentials from the PayU Settings single DocType.
     Falls back to site_config if the DocType is not available yet.
