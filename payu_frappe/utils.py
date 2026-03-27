@@ -33,7 +33,7 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         f"{params['key']}|{params['txnid']}|{params['amount']}|"
         f"{params['productinfo']}|{params['firstname']}|{params['email']}|"
         f"{params.get('udf1','')}|{params.get('udf2','')}|{params.get('udf3','')}|"
-        f"{params.get('udf4','')}|{params.get('udf5','')}|||||{salt}"
+        f"{params.get('udf4','')}|{params.get('udf5','')}||||||{salt}"
     )
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
