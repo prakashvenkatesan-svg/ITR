@@ -173,16 +173,49 @@ def submit_itr_details():
         else:
             doc.cash_deposited_range = cash_val
 
-        # --- Attachments ---
-        doc.bank_details_attachment = data.get("bank_details_attachment") or data.get("bankDetailsAttachment")
-        doc.form_16_attachment = data.get("form_16_attachment") or data.get("form16Attachment")
-        doc.demat_statement_attachment = data.get("demat_statement_attachment") or data.get("dematAttachment")
+        # --- Attachments are now handled after doc insertion using actual File uploads ---
 
 
         doc.service_amount = data.get("serviceAmount") or data.get("service_amount")
 
         doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True)
+
+        files_were_attached = False
+
+        if hasattr(frappe.request, "files") and getattr(frappe.request, "files", None):
+            try:
+                from frappe.utils.file_manager import save_file
+                file_fields = {
+                    "bank_details_attachment": "bank_details_attachment",
+                    "form_16_attachment": "form_16_attachment",
+                    "demat_statement_attachment": "demat_statement_attachment"
+                }
+                
+                for fieldname, req_file_name in file_fields.items():
+                    if req_file_name in frappe.request.files:
+                        file_obj = frappe.request.files.get(req_file_name)
+                        file_content = file_obj.read()
+                        
+                        if file_content:
+                            saved_file = save_file(
+                                fname=file_obj.filename,
+                                content=file_content,
+                                dt="ITR Filing Submission",
+                                dn=doc.name,
+                                folder="Home/Attachments",
+                                decode=False,
+                                is_private=1,
+                                df=fieldname
+                            )
+                            doc.set(fieldname, saved_file.file_url)
+                            files_were_attached = True
+            except Exception as fe:
+                frappe.log_error(title="File Attachment Error", message=str(fe))
+        
+        if files_were_attached:
+            doc.save(ignore_permissions=True)
+
         frappe.db.commit()
 
         return {
