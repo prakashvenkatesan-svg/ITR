@@ -296,7 +296,10 @@ def get_checkout_details(request_id):
     doc = frappe.get_doc("ITR Filing Submission", request_id)
     settings = get_payu_settings()
 
-    txnid = f"{doc.name}-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
+    # Format txnid tightly to avoid PayU's 25-character max-length limit
+    # e.g. ITR-SUB-00019 (13 chars) + '-' + 2603281045 (10 chars) = 24 chars
+    time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M')
+    txnid = f"{doc.name}-{time_str}"
     
     # PayU strictly expects '2000' and not '2000.0' or the hash verification fails
     amt_val = float(doc.service_amount or 0)
@@ -309,8 +312,8 @@ def get_checkout_details(request_id):
         "amount": amount,
         "productinfo": f"ITR Filing Services - {doc.name}",
         "firstname": doc.full_name,
-        "email": doc.email,
-        "phone": doc.mobile_number or "",
+        "email": doc.email or "test@example.com",
+        "phone": doc.mobile_number or "9999999999",
         "surl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "furl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "service_provider": "payu_paisa",
