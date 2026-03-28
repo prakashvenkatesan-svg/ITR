@@ -60,5 +60,30 @@ frappe.ui.form.on('ITR Filing Submission', {
                 return statusColors[doc.payment_status] || 'grey';
             });
         }
+
+        // Show/Hide IT Portal Password
+        let pwd_field = frm.fields_dict.it_portal_password;
+        if (pwd_field && pwd_field.df.fieldtype === 'Data') {
+            setTimeout(() => {
+                let $input = pwd_field.$input;
+                if ($input && $input.length > 0) {
+                    $input.attr('type', 'password');
+                    if ($input.parent().find('.pwd-toggle-btn').length === 0) {
+                        $input.wrap('<div style="position: relative;"></div>');
+                        let $eye = $('<i class="fa fa-eye pwd-toggle-btn" style="position: absolute; right: 10px; top: 8px; cursor: pointer; color: #8D99A6; z-index: 4;"></i>');
+                        $eye.insertAfter($input);
+                        $eye.on('click', function() {
+                            if ($input.attr('type') === 'password') {
+                                $input.attr('type', 'text');
+                                $eye.removeClass('fa-eye').addClass('fa-eye-slash');
+                            } else {
+                                $input.attr('type', 'password');
+                                $eye.removeClass('fa-eye-slash').addClass('fa-eye');
+                            }
+                        });
+                    }
+                }
+            }, 500);
+        }
     }
 });

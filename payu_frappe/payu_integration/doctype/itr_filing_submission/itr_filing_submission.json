@@ -92,7 +92,7 @@
         {"fieldname": "previously_filed_with_aionion", "fieldtype": "Select", "label": "Previously Filed with Aionion?", "options": "No\nYes"},
         {"fieldname": "registered_on_it_portal", "fieldtype": "Select", "label": "Registered on IT Portal?", "options": "No\nYes"},
         {"fieldname": "willing_to_share_password", "fieldtype": "Select", "label": "Willing to share password?", "options": "No\nYes\nNot Applicable"},
-        {"fieldname": "it_portal_password", "fieldtype": "Password", "label": "IT Portal Password"},
+        {"fieldname": "it_portal_password", "fieldtype": "Data", "label": "IT Portal Password"},
 
         {"fieldname": "section_4_personal", "fieldtype": "Section Break", "label": "Personal Details"},
         {"fieldname": "name_as_per_pan", "fieldtype": "Data", "label": "Name as per PAN"},
@@ -103,13 +103,13 @@
         {"fieldname": "name_as_per_aadhaar", "fieldtype": "Data", "label": "Name as per Aadhaar"},
         {"fieldname": "communication_address", "fieldtype": "Small Text", "label": "Communication Address"},
         {"fieldname": "permanent_address", "fieldtype": "Small Text", "label": "Permanent Address"},
-        {"fieldname": "bank_details_attachment", "fieldtype": "Attach", "label": "Bank Details Attachment"},
+        {"fieldname": "bank_details_attachment", "fieldtype": "Attach", "label": "Bank Details Attachment", "read_only": 1},
 
         {"fieldname": "section_5_residency_salary", "fieldtype": "Section Break", "label": "Residency & Salary"},
         {"fieldname": "is_indian_resident", "fieldtype": "Select", "label": "Is Indian Resident?", "options": "Yes\nNo"},
         {"fieldname": "has_salary_income", "fieldtype": "Select", "label": "Has Salary Income?", "options": "No\nYes"},
         {"fieldname": "has_form_16", "fieldtype": "Select", "label": "Has Form 16?", "options": "No\nYes"},
-        {"fieldname": "form_16_attachment", "fieldtype": "Attach", "label": "Form 16 Attachment"},
+        {"fieldname": "form_16_attachment", "fieldtype": "Attach", "label": "Form 16 Attachment", "read_only": 1},
 
         {"fieldname": "section_6_property", "fieldtype": "Section Break", "label": "Property Income"},
         {"fieldname": "has_rental_income", "fieldtype": "Select", "label": "Has Rental Income?", "options": "No\nYes"},
@@ -131,7 +131,7 @@
         {"fieldname": "other_demat_account", "fieldtype": "Select", "label": "Other Demat Account?", "options": "No\nYes"},
         {"fieldname": "cash_deposited_range", "fieldtype": "Select", "label": "Cash Deposited FY 24-25",
             "options": "Less than 10 Lakhs\nMore than 10 Lakhs\nNot Applicable"},
-        {"fieldname": "demat_statement_attachment", "fieldtype": "Attach", "label": "Demat Statement Attachment"},
+        {"fieldname": "demat_statement_attachment", "fieldtype": "Attach", "label": "Demat Statement Attachment", "read_only": 1},
 
         {"fieldname": "section_9_payment", "fieldtype": "Section Break", "label": "Payment & Processing"},
         {"fieldname": "service_amount", "fieldtype": "Select", "label": "Service Amount (₹)",
