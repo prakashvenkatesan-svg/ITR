@@ -173,6 +173,12 @@ def submit_itr_details():
         else:
             doc.cash_deposited_range = cash_val
 
+        # --- Attachments ---
+        doc.bank_details_attachment = data.get("bank_details_attachment") or data.get("bankDetailsAttachment")
+        doc.form_16_attachment = data.get("form_16_attachment") or data.get("form16Attachment")
+        doc.demat_statement_attachment = data.get("demat_statement_attachment") or data.get("dematAttachment")
+
+
         doc.service_amount = data.get("serviceAmount") or data.get("service_amount")
 
         doc.flags.ignore_mandatory = True
