@@ -26,3 +26,6 @@ website_route_rules = [
 doctype_js = {
     "ITR Filing Submission": "payu_frappe/payu_integration/doctype/itr_filing_submission/itr_filing_submission.js"
 }
+doctype_list_js = {
+    "ITR Filing Submission": "payu_frappe/payu_integration/doctype/itr_filing_submission/itr_filing_submission_list.js"
+}
