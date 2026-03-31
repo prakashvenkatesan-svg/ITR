@@ -220,13 +220,9 @@ function open_whatsapp_dialog(frm) {
 
 function fetch_wa_history(frm, body, scroll = false) {
     frappe.call({
-        method: 'frappe.client.get_list',
+        method: 'payu_frappe.api.get_whatsapp_history',
         args: {
-            doctype: 'WhatsApp Message',
-            filters: { itr_submission: frm.doc.name },
-            fields: ['direction', 'message', 'creation', 'media_url'],
-            order_by: 'creation asc',
-            limit: 50
+            itr_submission: frm.doc.name
         },
         callback: (r) => {
             body.empty();

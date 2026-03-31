@@ -263,6 +263,20 @@ def send_manual_whatsapp(docname, message, media_url=None):
 
 
 @frappe.whitelist(allow_guest=True)
+def get_whatsapp_history(itr_submission):
+    """
+    Fetch history for the integrated chat UI, bypassing client-side get_list restrictions.
+    """
+    return frappe.get_all(
+        "WhatsApp Message",
+        filters={"itr_submission": itr_submission},
+        fields=["direction", "message", "creation", "media_url"],
+        order_by="creation asc",
+        limit=50
+    )
+
+
+@frappe.whitelist(allow_guest=True)
 def handle_whatsapp_webhook():
     """
     Incoming WhatsApp messages from Picky Assist Webhook.

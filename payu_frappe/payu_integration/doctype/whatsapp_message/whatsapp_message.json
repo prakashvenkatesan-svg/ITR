@@ -16,6 +16,7 @@
   "regional_manager",
   "section_content",
   "message",
+  "media_url",
   "picky_assist_id"
  ],
  "fields": [
@@ -61,6 +62,12 @@
    "fieldtype": "Small Text",
    "label": "Message",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "media_url",
+   "fieldtype": "Data",
+   "label": "Media URL",
+   "read_only": 1
   },
   {
    "fieldname": "picky_assist_id",
