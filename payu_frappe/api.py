@@ -317,7 +317,7 @@ def get_checkout_details(request_id):
         "surl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "furl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "service_provider": "payu_paisa",
-        "udf1": doc.name,
+        "udf1": "",
         "udf2": "",
         "udf3": "",
         "udf4": "",
@@ -354,6 +354,12 @@ def handle_callback():
 
     txnid = data.get("txnid", "")
     request_ref = data.get("udf1", "")
+
+    if not request_ref and txnid.startswith("ITR-SUB-"):
+        parts = txnid.split('-')
+        if len(parts) >= 3:
+            request_ref = f"{parts[0]}-{parts[1]}-{parts[2]}"
+
     payment_status = "Success" if data.get("status") == "success" else "Failed"
 
     try:
