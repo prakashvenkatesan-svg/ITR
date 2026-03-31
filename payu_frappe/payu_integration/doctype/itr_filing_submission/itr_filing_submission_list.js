@@ -17,8 +17,10 @@ frappe.listview_settings['ITR Filing Submission'] = {
             listview.filter_area.clear_filters();
         }
         
-        // Force page length to 20 to override any saved user preferences
+        // Force page length and sort order
         listview.page_length = 20;
+        listview.sort_by = 'name';
+        listview.sort_order = 'desc';
         
         listview.refresh();
     },
