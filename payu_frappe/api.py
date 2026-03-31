@@ -181,20 +181,21 @@ def submit_itr_details():
         doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True)
 
-        files_were_attached = False
-
-        if hasattr(frappe.request, "files") and getattr(frappe.request, "files", None):
-            try:
-                from frappe.utils.file_manager import save_file
-                file_fields = {
-                    "bank_details_attachment": "bank_details_attachment",
-                    "form_16_attachment": "form_16_attachment",
-                    "demat_statement_attachment": "demat_statement_attachment"
-                }
-                
-                for fieldname, req_file_name in file_fields.items():
-                    if req_file_name in frappe.request.files:
-                        file_obj = frappe.request.files.get(req_file_name)
+        # --- Process Physical File Attachments ---
+        files_attached = []
+        if hasattr(frappe.request, "files") and frappe.request.files:
+            from frappe.utils.file_manager import save_file
+            
+            file_mapping = {
+                "bank_details_attachment": "bank_details_attachment",
+                "form_16_attachment": "form_16_attachment",
+                "demat_statement_attachment": "demat_statement_attachment"
+            }
+            
+            for fieldname, request_key in file_mapping.items():
+                if request_key in frappe.request.files:
+                    try:
+                        file_obj = frappe.request.files.get(request_key)
                         file_content = file_obj.read()
                         
                         if file_content:
@@ -204,19 +205,24 @@ def submit_itr_details():
                                 dt="ITR Filing Submission",
                                 dn=doc.name,
                                 folder="Home/Attachments",
-                                decode=False,
                                 is_private=1,
                                 df=fieldname
                             )
-                            doc.set(fieldname, saved_file.file_url)
-                            files_were_attached = True
-            except Exception as fe:
-                frappe.log_error(title="File Attachment Error", message=str(fe))
-        
-        if files_were_attached:
-            doc.save(ignore_permissions=True)
+                            # Explicitly update the document field with the new file URL
+                            doc.db_set(fieldname, saved_file.file_url)
+                            files_attached.append(fieldname)
+                    except Exception as fe:
+                        frappe.log_error(f"Attachment failed for {fieldname}", str(fe))
 
+        # Re-sync and finalize record
+        doc.db_set("payment_amount", doc.payment_amount)
         frappe.db.commit()
+
+        # Final debug log to confirm creation and attached files
+        frappe.log_error(
+            title="ITR Submission Success", 
+            message=f"Created: {doc.name}\nFiles Saved: {', '.join(files_attached) if files_attached else 'None'}"
+        )
 
         return {
             "success": True,
