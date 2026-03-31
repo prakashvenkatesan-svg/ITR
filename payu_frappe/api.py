@@ -224,6 +224,14 @@ def submit_itr_details():
             message=f"Created: {doc.name}\nFiles Saved: {', '.join(files_attached) if files_attached else 'None'}"
         )
 
+        # --- Automated WhatsApp Confirmation ---
+        try:
+            from payu_frappe.utils import send_whatsapp_message
+            welcome_msg = f"Hello {doc.full_name}, thank you for submitting your ITR details for {doc.tax_year}. Our team will review it shortly. Team Aionion Advisory."
+            send_whatsapp_message(doc.mobile_number, welcome_msg, itr_submission=doc.name)
+        except Exception as we:
+            frappe.log_error(title="Auto WhatsApp Error", message=str(we))
+
         return {
             "success": True,
             "message": "ITR details submitted successfully",
@@ -237,7 +245,65 @@ def submit_itr_details():
 
 
 @frappe.whitelist(allow_guest=True)
+def send_manual_whatsapp(docname, message):
+    """
+    Called from the 'Send Picky Assist Msg' button in ITR Filing Submission.
+    """
+    from payu_frappe.utils import send_whatsapp_message
+    doc = frappe.get_doc("ITR Filing Submission", docname)
+    
+    res = send_whatsapp_message(
+        receiver_number=doc.mobile_number,
+        message_text=message,
+        itr_submission=doc.name,
+        regional_manager=doc.regional_manager or frappe.session.user
+    )
+    return res
+
+
+@frappe.whitelist(allow_guest=True)
+def handle_whatsapp_webhook():
+    """
+    Incoming WhatsApp messages from Picky Assist Webhook.
+    JSON Payload: {"number": "91...", "message-in": "...", "unique-id": "..."}
+    """
+    data = frappe.form_dict
+    sender_number = str(data.get("number", "")).strip().replace("+", "")
+    content = data.get("message_in_raw") or data.get("message-in")
+
+    if not sender_number or not content:
+        return {"status": "Handled", "error": "Incomplete payload"}
+
+    # Find the matching client by mobile number
+    # We look for exact match or suffix match to handle country code variations
+    client = frappe.db.get_value("ITR Filing Submission", {"mobile_number": ["like", f"%{sender_number[-10:]}"]}, ["name", "regional_manager"], as_dict=1)
+
+    # Log the incoming message
+    msg_doc = frappe.get_doc({
+        "doctype": "WhatsApp Message",
+        "direction": "Inbound",
+        "mobile_number": sender_number,
+        "message": content,
+        "itr_submission": client.name if client else None,
+        "regional_manager": client.regional_manager if client else None,
+        "picky_assist_id": data.get("unique-id")
+    })
+    msg_doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    # Trigger a notification for the RM if the client is matched
+    if client and client.regional_manager:
+        frappe.publish_realtime("whatsapp_notification", {
+            "message": f"New WhatsApp from {client.name}",
+            "rm": client.regional_manager
+        }, user=client.regional_manager)
+
+    return {"status": "Success", "id": msg_doc.name}
+
+
+@frappe.whitelist(allow_guest=True)
 def submit_client_requirements():
+
     """Alias kept for backward compatibility with older React code."""
     return submit_itr_details()
 
@@ -287,6 +353,15 @@ def generate_payment_link_and_send(request_id):
             message=email_body,
             queue="short",
         )
+        
+        # --- Send Payment Link via WhatsApp ---
+        try:
+            from payu_frappe.utils import send_whatsapp_message
+            wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
+            send_whatsapp_message(doc.mobile_number, wa_msg, itr_submission=doc.name)
+        except Exception as we:
+            frappe.log_error(title="Payment WA Error", message=str(we))
+            
     except Exception:
         frappe.log_error("Email enqueue failed", "PayU Email Error")
 
