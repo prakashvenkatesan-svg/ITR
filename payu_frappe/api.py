@@ -301,17 +301,16 @@ def get_checkout_details(request_id):
     time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M')
     txnid = f"{doc.name}-{time_str}"
     
-    # PayU strictly expects '2000' and not '2000.0' or the hash verification fails
+    # PayU strictly expects '2000' or '2000.00', but 2 decimal places is the safest format
     amt_val = float(doc.service_amount or 0)
-    amount = str(int(amt_val)) if amt_val.is_integer() else str(amt_val)
-
+    amount = f"{amt_val:.2f}"
 
     params = {
         "key": settings["key"],
         "txnid": txnid,
         "amount": amount,
-        "productinfo": f"ITR Filing Services - {doc.name}",
-        "firstname": doc.full_name,
+        "productinfo": "ITR Filing",
+        "firstname": doc.full_name or "Client",
         "email": doc.email or "test@example.com",
         "phone": doc.mobile_number or "9999999999",
         "surl": get_url("/api/method/payu_frappe.api.handle_callback"),

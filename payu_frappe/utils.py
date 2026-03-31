@@ -10,16 +10,16 @@ def get_payu_settings():
     try:
         settings = frappe.get_single("PayU Settings")
         return {
-            "key": settings.merchant_key,
-            "salt": settings.merchant_salt,
+            "key": settings.merchant_key.strip() if settings.merchant_key else "",
+            "salt": settings.merchant_salt.strip() if settings.merchant_salt else "",
             "is_sandbox": settings.is_sandbox,
         }
     except Exception:
         # Fallback: read from site_config.json (useful during initial setup)
         conf = frappe.conf
         return {
-            "key": conf.get("payu_merchant_key", ""),
-            "salt": conf.get("payu_merchant_salt", ""),
+            "key": conf.get("payu_merchant_key", "").strip() if conf.get("payu_merchant_key") else "",
+            "salt": conf.get("payu_merchant_salt", "").strip() if conf.get("payu_merchant_salt") else "",
             "is_sandbox": conf.get("payu_is_sandbox", 1),
         }
 
@@ -33,6 +33,10 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         f"{params.get('key','')}|{params.get('txnid','')}|{params.get('amount','')}|"
         f"{params.get('productinfo','')}|{params.get('firstname','')}|{params.get('email','')}|||||||||||{salt}"
     )
+    try:
+        frappe.log_error("Raw PayU Hash String", f"String: '{hash_str}'\nParams: {params}")
+    except Exception:
+        pass
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
 
