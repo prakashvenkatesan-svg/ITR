@@ -65,7 +65,7 @@ def verify_payu_hash(data: dict, salt: str) -> bool:
     return received_hash.lower() == expected_hash.lower()
 
 
-def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None):
+def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None):
     """
     Sends a WhatsApp message via Picky Assist V2 Push API.
     Log the message in the WhatsApp Message DocType.
@@ -83,15 +83,17 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not clean_number.startswith("91") and len(clean_number) == 10:
             clean_number = "91" + clean_number
 
+        message_data = {
+            "number": clean_number,
+            "message": message_text
+        }
+        if media_url:
+            message_data["media"] = media_url
+
         payload = {
             "token": settings.get_password("api_token"),
             "application": settings.application_id,
-            "data": [
-                {
-                    "number": clean_number,
-                    "message": message_text
-                }
-            ]
+            "data": [message_data]
         }
 
         url = "https://app.pickyassist.com/api/v2/push"
@@ -104,6 +106,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             "direction": "Outbound",
             "mobile_number": clean_number,
             "message": message_text,
+            "media_url": media_url,
             "itr_submission": itr_submission,
             "regional_manager": regional_manager or frappe.session.user,
             "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if res_data.get("status") == "success" else ""

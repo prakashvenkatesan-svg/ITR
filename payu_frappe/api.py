@@ -245,9 +245,9 @@ def submit_itr_details():
 
 
 @frappe.whitelist(allow_guest=True)
-def send_manual_whatsapp(docname, message):
+def send_manual_whatsapp(docname, message, media_url=None):
     """
-    Called from the 'Send Picky Assist Msg' button in ITR Filing Submission.
+    Called from the integrated WhatsApp Chat Dialog in ITR Filing Submission.
     """
     from payu_frappe.utils import send_whatsapp_message
     doc = frappe.get_doc("ITR Filing Submission", docname)
@@ -255,6 +255,7 @@ def send_manual_whatsapp(docname, message):
     res = send_whatsapp_message(
         receiver_number=doc.mobile_number,
         message_text=message,
+        media_url=media_url,
         itr_submission=doc.name,
         regional_manager=doc.regional_manager or frappe.session.user
     )
