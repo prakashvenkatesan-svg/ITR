@@ -61,6 +61,54 @@ frappe.ui.form.on('ITR Filing Submission', {
             });
         }
 
+        // --- WhatsApp Integration ---
+        if (frm.doc.mobile_number) {
+            const clean_mobile = frm.doc.mobile_number.replace(/\D/g, ''); // Removes +, -, spaces
+            const wa_number = clean_mobile.startsWith('91') ? clean_mobile : '91' + clean_mobile;
+
+            // Button: Open WhatsApp Web (Free/Manual)
+            frm.add_custom_button(__('Open WhatsApp Web'), function() {
+                window.open(`https://web.whatsapp.com/send?phone=${wa_number}`, '_blank');
+            }, __('WhatsApp'));
+
+            // Button: Send via Picky Assist (API/Automated)
+            frm.add_custom_button(__('Send Picky Assist Msg'), function() {
+                frappe.prompt([
+                    {
+                        label: 'Message',
+                        fieldname: 'message',
+                        fieldtype: 'Small Text',
+                        reqd: 1,
+                        default: `Hello ${frm.doc.full_name}, this is Aionion Advisory. Regarding your ITR Filing...`
+                    }
+                ], (values) => {
+                    frappe.call({
+                        method: 'payu_frappe.api.send_manual_whatsapp',
+                        args: {
+                            docname: frm.doc.name,
+                            message: values.message
+                        },
+                        freeze: true,
+                        freeze_message: __('Sending WhatsApp message...'),
+                        callback: function(r) {
+                            if (r.message && r.message.status === "Success") {
+                                frappe.show_alert({ 
+                                    message: __('WhatsApp message sent successfully!'), 
+                                    indicator: 'green' 
+                                });
+                            } else {
+                                frappe.msgprint({
+                                    title: __('WhatsApp Error'),
+                                    message: r.message ? r.message.error : __('Failed to send message.'),
+                                    indicator: 'red'
+                                });
+                            }
+                        }
+                    });
+                }, __('Send WhatsApp Message'), __('Send'));
+            }, __('WhatsApp'));
+        }
+
         // Show/Hide IT Portal Password
         let pwd_field = frm.fields_dict.it_portal_password;
         if (pwd_field && pwd_field.df.fieldtype === 'Data') {

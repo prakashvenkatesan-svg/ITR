@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "allow_guest_to_view": 0,
+ "allow_import": 0,
+ "allow_rename": 0,
+ "autoname": "WAMSG-.#####",
+ "creation": "2026-03-31 15:35:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_info",
+  "direction",
+  "mobile_number",
+  "itr_submission",
+  "regional_manager",
+  "section_content",
+  "message",
+  "picky_assist_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_info",
+   "fieldtype": "Section Break",
+   "label": "Message Info"
+  },
+  {
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "label": "Direction",
+   "options": "Inbound\nOutbound",
+   "reqd": 1
+  },
+  {
+   "fieldname": "mobile_number",
+   "fieldtype": "Data",
+   "label": "Mobile Number",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "itr_submission",
+   "fieldtype": "Link",
+   "label": "ITR Submission",
+   "options": "ITR Filing Submission",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "regional_manager",
+   "fieldtype": "Link",
+   "label": "Regional Manager",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "section_content",
+   "fieldtype": "Section Break",
+   "label": "Content"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "label": "Message",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "picky_assist_id",
+   "fieldtype": "Data",
+   "label": "Picky Assist ID",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-03-31 15:35:00.000000",
+ "modified_by": "Administrator",
+ "module": "PayU Integration",
+ "name": "WhatsApp Message",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
