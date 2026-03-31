@@ -61,52 +61,9 @@ frappe.ui.form.on('ITR Filing Submission', {
             });
         }
 
-        // --- WhatsApp Integration ---
-        if (frm.doc.mobile_number) {
-            const clean_mobile = frm.doc.mobile_number.replace(/\D/g, ''); // Removes +, -, spaces
-            const wa_number = clean_mobile.startsWith('91') ? clean_mobile : '91' + clean_mobile;
-
-            // Button: Open WhatsApp Web (Free/Manual)
-            frm.add_custom_button(__('Open WhatsApp Web'), function() {
-                window.open(`https://web.whatsapp.com/send?phone=${wa_number}`, '_blank');
-            }, __('WhatsApp'));
-
-            // Button: Send via Picky Assist (API/Automated)
-            frm.add_custom_button(__('Send Picky Assist Msg'), function() {
-                frappe.prompt([
-                    {
-                        label: 'Message',
-                        fieldname: 'message',
-                        fieldtype: 'Small Text',
-                        reqd: 1,
-                        default: `Hello ${frm.doc.full_name}, this is Aionion Advisory. Regarding your ITR Filing...`
-                    }
-                ], (values) => {
-                    frappe.call({
-                        method: 'payu_frappe.api.send_manual_whatsapp',
-                        args: {
-                            docname: frm.doc.name,
-                            message: values.message
-                        },
-                        freeze: true,
-                        freeze_message: __('Sending WhatsApp message...'),
-                        callback: function(r) {
-                            if (r.message && r.message.status === "Success") {
-                                frappe.show_alert({ 
-                                    message: __('WhatsApp message sent successfully!'), 
-                                    indicator: 'green' 
-                                });
-                            } else {
-                                frappe.msgprint({
-                                    title: __('WhatsApp Error'),
-                                    message: r.message ? r.message.error : __('Failed to send message.'),
-                                    indicator: 'red'
-                                });
-                            }
-                        }
-                    });
-                }, __('Send WhatsApp Message'), __('Send'));
-            }, __('WhatsApp'));
+        // --- WhatsApp Integrated Chat UI ---
+        if (frm.doc.mobile_number && !frm.is_new()) {
+            render_whatsapp_chat(frm);
         }
 
         // Show/Hide IT Portal Password
@@ -135,3 +92,245 @@ frappe.ui.form.on('ITR Filing Submission', {
         }
     }
 });
+
+// --- WhatsApp Integrated Chat Functionality ---
+function render_whatsapp_chat(frm) {
+    if (!frm.fields_dict.whatsapp_chat_widget) return;
+
+    const wrapper = $(frm.fields_dict.whatsapp_chat_widget.wrapper);
+    wrapper.empty();
+
+    // 1. Inject CSS for WhatsApp UI
+    const chat_css = `
+        <style>
+            .wa-chat-container {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                background-color: #e5ddd5;
+                height: 450px;
+                display: flex;
+                flex-direction: column;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                overflow: hidden;
+            }
+            .wa-chat-header {
+                background-color: #075E54;
+                color: white;
+                padding: 10px 15px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-weight: 500;
+            }
+            .wa-chat-header .wa-user-info { display: flex; align-items: center; gap: 10px; }
+            .wa-chat-header .wa-icons { display: flex; gap: 15px; cursor: pointer; }
+            .wa-chat-messages {
+                flex: 1;
+                padding: 15px;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .wa-msg {
+                max-width: 75%;
+                padding: 8px 12px;
+                border-radius: 8px;
+                font-size: 14px;
+                position: relative;
+                box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+            }
+            .wa-msg.outbound {
+                align-self: flex-end;
+                background-color: #dcf8c6;
+            }
+            .wa-msg.inbound {
+                align-self: flex-start;
+                background-color: #fff;
+            }
+            .wa-msg-time {
+                font-size: 10px;
+                color: #999;
+                text-align: right;
+                margin-top: 2px;
+            }
+            .wa-chat-footer {
+                background-color: #f0f0f0;
+                padding: 10px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .wa-input-container {
+                flex: 1;
+                background: white;
+                border-radius: 20px;
+                padding: 5px 15px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .wa-input-container input {
+                border: none;
+                width: 100%;
+                outline: none;
+                font-size: 14px;
+            }
+            .wa-send-btn {
+                background-color: #128C7E;
+                color: white;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            }
+            .wa-footer-icon { color: #888; font-size: 18px; cursor: pointer; }
+        </style>
+    `;
+
+    // 2. Initial HTML Structure
+    const chat_html = `
+        <div class="wa-chat-container">
+            <div class="wa-chat-header">
+                <div class="wa-user-info">
+                    <i class="fa fa-user-circle" style="font-size: 24px;"></i>
+                    <span>${frm.doc.full_name} (${frm.doc.mobile_number})</span>
+                </div>
+                <div class="wa-icons">
+                    <i class="fa fa-search" title="Search Chat"></i>
+                    <i class="fa fa-ellipsis-v" title="Settings"></i>
+                </div>
+            </div>
+            <div class="wa-chat-messages" id="wa-chat-body">
+                <div style="text-align: center; color: #888; font-size: 12px; margin-top: 100px;">
+                    Loading messages...
+                </div>
+            </div>
+            <div class="wa-chat-footer">
+                <i class="fa fa-plus wa-footer-icon" title="Attach"></i>
+                <div class="wa-input-container">
+                    <i class="fa fa-smile-o wa-footer-icon"></i>
+                    <input type="text" id="wa-input" placeholder="Type a message">
+                </div>
+                <div class="wa-send-btn" id="wa-send-trigger" title="Send (Enter)">
+                    <i class="fa fa-paper-plane" style="margin-left: -2px;"></i>
+                </div>
+            </div>
+        </div>
+    `;
+
+    wrapper.html(chat_css + chat_html);
+
+    // 3. Load Message History
+    load_chat_history(frm);
+
+    // 4. Bind Events
+    wrapper.find('#wa-send-trigger').on('click', () => send_wa_msg(frm));
+    wrapper.find('#wa-input').on('keypress', (e) => {
+        if (e.which === 13) send_wa_msg(frm);
+    });
+
+    // 5. Real-time Listener (Incoming)
+    frappe.realtime.on('whatsapp_notification', (data) => {
+        if (data.message && data.rm === frappe.session.user) {
+            fetch_and_append_new_msg(frm);
+        }
+    });
+}
+
+function load_chat_history(frm) {
+    frappe.call({
+        method: 'frappe.client.get_list',
+        args: {
+            doctype: 'WhatsApp Message',
+            filters: { itr_submission: frm.doc.name },
+            fields: ['direction', 'message', 'creation'],
+            order_by: 'creation asc',
+            limit: 50
+        },
+        callback: (r) => {
+            const body = $('#wa-chat-body');
+            body.empty();
+            if (r.message && r.message.length > 0) {
+                r.message.forEach(msg => append_msg_to_ui(msg));
+                scroll_wa_bottom();
+            } else {
+                body.append('<div style="text-align: center; color: #888; font-size: 12px; margin-top: 20px;">No messages yet.</div>');
+            }
+        }
+    });
+}
+
+function append_msg_to_ui(msg) {
+    const body = $('#wa-chat-body');
+    const time = frappe.datetime.get_time(msg.creation);
+    const align_class = msg.direction === 'Inbound' ? 'inbound' : 'outbound';
+    
+    const msg_html = `
+        <div class="wa-msg ${align_class}">
+            <div class="wa-msg-content">${msg.message}</div>
+            <div class="wa-msg-time">${time}</div>
+        </div>
+    `;
+    body.append(msg_html);
+}
+
+function send_wa_msg(frm) {
+    const $input = $('#wa-input');
+    const text = $input.val().trim();
+    if (!text) return;
+
+    $input.val('').prop('disabled', true);
+
+    frappe.call({
+        method: 'payu_frappe.api.send_manual_whatsapp',
+        args: {
+            docname: frm.doc.name,
+            message: text
+        },
+        callback: (r) => {
+            $input.prop('disabled', false).focus();
+            if (r.message && r.message.status === 'Success') {
+                // Manually append for fast feedback
+                append_msg_to_ui({
+                    direction: 'Outbound',
+                    message: text,
+                    creation: frappe.datetime.now_datetime()
+                });
+                scroll_wa_bottom();
+            } else {
+                frappe.show_alert({ message: __('Failed: ') + (r.message ? r.message.error : 'Unknown error'), indicator: 'red' });
+            }
+        }
+    });
+}
+
+function scroll_wa_bottom() {
+    const body = document.getElementById('wa-chat-body');
+    if (body) body.scrollTop = body.scrollHeight;
+}
+
+function fetch_and_append_new_msg(frm) {
+    // Small delay to ensure DB commit
+    setTimeout(() => {
+        frappe.call({
+            method: 'frappe.client.get_list',
+            args: {
+                doctype: 'WhatsApp Message',
+                filters: { itr_submission: frm.doc.name },
+                fields: ['direction', 'message', 'creation'],
+                order_by: 'creation desc',
+                limit: 1
+            },
+            callback: (r) => {
+                if (r.message && r.message.length > 0) {
+                    append_msg_to_ui(r.message[0]);
+                    scroll_wa_bottom();
+                }
+            }
+        });
+    }, 500);
+}
