@@ -101,9 +101,7 @@ function open_whatsapp_dialog(frm) {
         title: `<i class="fa fa-whatsapp" style="color: #25D366; margin-right: 8px;"></i> WhatsApp: ${frm.doc.full_name}`,
         fields: [
             { fieldname: 'chat_widget', fieldtype: 'HTML' }
-        ],
-        primary_action_label: __('Close'),
-        primary_action: () => dialog.hide()
+        ]
     });
 
     const chat_css = `
@@ -186,26 +184,32 @@ function open_whatsapp_dialog(frm) {
         </div>
     `;
 
-    dialog.fields_dict.chat_widget.$wrapper.html(chat_css + chat_html);
+    const $wa_wrapper = dialog.fields_dict.chat_widget.$wrapper;
+    $wa_wrapper.html(chat_css + chat_html);
     dialog.show();
 
+    const $body = $wa_wrapper.find('#wa-dialog-body');
+    const $input = $wa_wrapper.find('#wa-dialog-input');
+    const $send = $wa_wrapper.find('#wa-dialog-send');
+    const $attach = $wa_wrapper.find('#wa-attach-trigger');
+
     // Load History
-    fetch_wa_history(frm, $('#wa-dialog-body'));
+    fetch_wa_history(frm, $body);
 
     // Bind Events
-    $('#wa-dialog-send').on('click', () => send_wa_msg_popup(frm));
-    $('#wa-dialog-input').on('keypress', (e) => { if (e.which === 13) send_wa_msg_popup(frm); });
+    $send.on('click', () => send_wa_msg_popup(frm, $wa_wrapper));
+    $input.on('keypress', (e) => { if (e.which === 13) send_wa_msg_popup(frm, $wa_wrapper); });
     
     // Attachment Logic
-    $('#wa-attach-trigger').on('click', () => {
+    $attach.on('click', () => {
         new frappe.ui.FileUploader({
             doctype: "ITR Filing Submission",
             docname: frm.doc.name,
             folder: "Home/Attachments",
-            make_attachments_public: true, // Picky Assist needs public links
+            make_attachments_public: true,
             on_success: (file) => {
                 const file_url = window.location.origin + file.file_url;
-                send_wa_msg_popup(frm, `Sent a file: ${file.file_name}`, file_url);
+                send_wa_msg_popup(frm, $wa_wrapper, `Sent a file: ${file.file_name}`, file_url);
             }
         });
     });
@@ -213,7 +217,7 @@ function open_whatsapp_dialog(frm) {
     // Real-time
     frappe.realtime.on('whatsapp_notification', (data) => {
         if (data.rm === frappe.session.user) {
-            fetch_wa_history(frm, $('#wa-dialog-body'), true);
+            fetch_wa_history(frm, $body, true);
         }
     });
 }
@@ -250,8 +254,8 @@ function fetch_wa_history(frm, body, scroll = false) {
     });
 }
 
-function send_wa_msg_popup(frm, override_text = null, media_url = null) {
-    const $input = $('#wa-dialog-input');
+function send_wa_msg_popup(frm, wrapper, override_text = null, media_url = null) {
+    const $input = wrapper.find('#wa-dialog-input');
     const text = override_text || $input.val().trim();
     if (!text && !media_url) return;
 
@@ -267,7 +271,8 @@ function send_wa_msg_popup(frm, override_text = null, media_url = null) {
         callback: (r) => {
             $input.prop('disabled', false).focus();
             if (r.message && r.message.status === 'Success') {
-                fetch_wa_history(frm, $('#wa-dialog-body'), true);
+                const $body = wrapper.find('#wa-dialog-body');
+                fetch_wa_history(frm, $body, true);
             } else {
                 frappe.show_alert({ message: __('Failed: ') + (r.message ? r.message.error : 'Error'), indicator: 'red' });
             }
