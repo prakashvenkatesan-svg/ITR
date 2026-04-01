@@ -52,10 +52,15 @@
     <input type="hidden" name="hash" id="f_hash">
     <input type="hidden" name="service_provider" value="payu_paisa">
     <input type="hidden" name="udf1" id="f_udf1">
-    <input type="hidden" name="udf2" value="">
-    <input type="hidden" name="udf3" value="">
-    <input type="hidden" name="udf4" value="">
-    <input type="hidden" name="udf5" value="">
+    <input type="hidden" name="udf2" id="f_udf2">
+    <input type="hidden" name="udf3" id="f_udf3">
+    <input type="hidden" name="udf4" id="f_udf4">
+    <input type="hidden" name="udf5" id="f_udf5">
+    <input type="hidden" name="udf6" id="f_udf6">
+    <input type="hidden" name="udf7" id="f_udf7">
+    <input type="hidden" name="udf8" id="f_udf8">
+    <input type="hidden" name="udf9" id="f_udf9">
+    <input type="hidden" name="udf10" id="f_udf10">
 </form>
 
 <script>
@@ -89,6 +94,15 @@
         document.getElementById('f_furl').value         = p.furl;
         document.getElementById('f_hash').value         = p.hash;
         document.getElementById('f_udf1').value         = p.udf1 || '';
+        document.getElementById('f_udf2').value         = p.udf2 || '';
+        document.getElementById('f_udf3').value         = p.udf3 || '';
+        document.getElementById('f_udf4').value         = p.udf4 || '';
+        document.getElementById('f_udf5').value         = p.udf5 || '';
+        document.getElementById('f_udf6').value         = p.udf6 || '';
+        document.getElementById('f_udf7').value         = p.udf7 || '';
+        document.getElementById('f_udf8').value         = p.udf8 || '';
+        document.getElementById('f_udf9').value         = p.udf9 || '';
+        document.getElementById('f_udf10').value        = p.udf10 || '';
         document.getElementById('payu-form').submit();
     })
     .catch(function(err) { showError('Network error. Please try again.'); });
