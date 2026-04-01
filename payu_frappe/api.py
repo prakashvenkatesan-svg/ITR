@@ -287,15 +287,12 @@ def get_picky_assist_templates():
 
 @frappe.whitelist(allow_guest=True)
 def get_whatsapp_history(itr_submission):
-    """
-    Fetch history for the integrated chat UI, bypassing client-side get_list restrictions.
-    """
+    """Fetch history for the chat UI, ensuring all fields are correctly formatted."""
     return frappe.get_all(
         "Picky Assist Message",
         filters={"itr_submission": itr_submission},
-        fields=["direction", "message", "creation", "media_url"],
-        order_by="creation asc",
-        limit=50
+        fields=["direction", "message", "creation", "media_url", "mobile_number"],
+        order_by="creation asc"
     )
 
 

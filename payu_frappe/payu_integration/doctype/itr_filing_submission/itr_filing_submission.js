@@ -295,18 +295,18 @@ function fetch_wa_history(frm, body, scroll = false) {
             body.empty();
             if (r.message && r.message.length > 0) {
                 r.message.forEach(msg => {
-                    const align = (msg.direction || "").toLowerCase() === 'inbound' ? 'inbound' : 'outbound';
-                    const time = frappe.datetime.get_time(msg.creation);
-                    let content = msg.message || "";
-                    if (msg.media_url) {
-                        content += `<br><a href="${msg.media_url}" target="_blank" style="color: #075E54; font-weight: bold;">[View Attachment]</a>`;
-                    }
-                    body.append(`
-                        <div class="wa-msg ${align}">
-                            <div>${content}</div>
-                            <div class="wa-msg-time">${time}</div>
-                        </div>
-                    `);
+                const align = (msg.direction || "").toLowerCase() === 'inbound' ? 'inbound' : 'outbound';
+                const time = frappe.datetime.get_time(msg.creation);
+                let content = msg.message || "";
+                if (msg.media_url) {
+                    content += `<br><a href="${msg.media_url}" target="_blank" style="color: #075E54; font-weight: bold;">[View Attachment]</a>`;
+                }
+                body.append(`
+                    <div class="wa-msg ${align}">
+                        <div>${content}</div>
+                        <div class="wa-msg-time">${time}</div>
+                    </div>
+                `);
                 });
                 if (scroll) body.scrollTop(body[0].scrollHeight);
                 else setTimeout(() => body.scrollTop(body[0].scrollHeight), 200);
