@@ -73,13 +73,13 @@
     "fields": [
         {"fieldname": "section_1_basic", "fieldtype": "Section Break", "label": "Basic & Identification"},
         {"fieldname": "full_name", "fieldtype": "Data", "label": "Full Name", "in_list_view": 1, "reqd": 1},
-        {"fieldname": "email", "fieldtype": "Data", "label": "Email", "in_list_view": 0},
+        {"fieldname": "email", "fieldtype": "Data", "label": "Email ID", "in_list_view": 1},
         {"fieldname": "mobile_number", "fieldtype": "Data", "label": "Mobile Number", "in_list_view": 1},
         {"fieldname": "country_code", "fieldtype": "Data", "label": "Country Code"},
         {"fieldname": "tax_year", "fieldtype": "Select", "label": "Tax Year", "in_list_view": 1, "options": "AY 2024-25\nAY 2025-26"},
         {"fieldname": "annual_income", "fieldtype": "Currency", "label": "Annual Income"},
         {"fieldname": "alt_whatsapp_number", "fieldtype": "Data", "label": "Alt WhatsApp Number"},
-        {"fieldname": "pan_number", "fieldtype": "Data", "label": "PAN Number", "in_list_view": 0},
+        {"fieldname": "pan_number", "fieldtype": "Data", "label": "PAN", "in_list_view": 1},
         {"fieldname": "account_type", "fieldtype": "Select", "label": "Account Type", "options": "Individual\nHUF"},
         {"fieldname": "interested_in_services", "fieldtype": "Data", "label": "Interested In Services"},
 

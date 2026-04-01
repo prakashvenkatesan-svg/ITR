@@ -60,7 +60,10 @@ def submit_itr_details():
         doc.full_name = (
             data.get("fullName") or data.get("full_name") or data.get("name")
         )
-        doc.email = data.get("email") or data.get("email_id") or data.get("emailId")
+        doc.email = (
+            data.get("email") or data.get("email_id") or 
+            data.get("emailId") or data.get("Email")
+        )
 
         ty = data.get("taxYear") or "2025-26"
         if ty and "AY" not in ty:
@@ -297,15 +300,18 @@ def get_whatsapp_history(itr_submission):
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.whitelist(allow_guest=True)
 def handle_whatsapp_webhook():
     """
     Incoming WhatsApp messages from Picky Assist Webhook.
     JSON Payload: {"number": "91...", "message-in": "...", "unique-id": "..."}
     """
     data = frappe.form_dict
-    sender_number = str(data.get("number", "")).strip().replace("+", "")
-    content = data.get("message_in_raw") or data.get("message-in")
+    
+    # Try all common Picky Assist sender number fields
+    raw_number = data.get("number") or data.get("sender") or data.get("from") or ""
+    sender_number = str(raw_number).strip().replace("+", "")
+    
+    content = data.get("message_in_raw") or data.get("message-in") or data.get("text")
 
     if not sender_number or not content:
         return {"status": "Handled", "error": "Incomplete payload"}

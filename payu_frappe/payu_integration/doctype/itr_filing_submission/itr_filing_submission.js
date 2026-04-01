@@ -295,7 +295,7 @@ function fetch_wa_history(frm, body, scroll = false) {
             body.empty();
             if (r.message && r.message.length > 0) {
                 r.message.forEach(msg => {
-                    const align = msg.direction === 'Inbound' ? 'inbound' : 'outbound';
+                    const align = (msg.direction || "").toLowerCase() === 'inbound' ? 'inbound' : 'outbound';
                     const time = frappe.datetime.get_time(msg.creation);
                     let content = msg.message || "";
                     if (msg.media_url) {
