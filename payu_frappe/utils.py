@@ -74,7 +74,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
     import json
 
     try:
-        settings = frappe.get_single("WhatsApp Settings")
+        settings = frappe.get_single("Picky Assist Settings")
         if not settings.is_enabled:
             return {"status": "Disabled", "error": "WhatsApp integration is disabled in settings."}
 
@@ -102,7 +102,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
 
         # Log the message in Database
         log_doc = frappe.get_doc({
-            "doctype": "WhatsApp Message",
+            "doctype": "Picky Assist Message",
             "direction": "Outbound",
             "mobile_number": clean_number,
             "message": message_text,

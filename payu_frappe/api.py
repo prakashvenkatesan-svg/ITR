@@ -268,7 +268,7 @@ def get_whatsapp_history(itr_submission):
     Fetch history for the integrated chat UI, bypassing client-side get_list restrictions.
     """
     return frappe.get_all(
-        "WhatsApp Message",
+        "Picky Assist Message",
         filters={"itr_submission": itr_submission},
         fields=["direction", "message", "creation", "media_url"],
         order_by="creation asc",
@@ -295,7 +295,7 @@ def handle_whatsapp_webhook():
 
     # Log the incoming message
     msg_doc = frappe.get_doc({
-        "doctype": "WhatsApp Message",
+        "doctype": "Picky Assist Message",
         "direction": "Inbound",
         "mobile_number": sender_number,
         "message": content,
