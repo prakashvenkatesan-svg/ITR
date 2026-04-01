@@ -29,13 +29,14 @@ def generate_payu_hash(params: dict, salt: str) -> str:
     PayU hash formula (SHA-512):
     key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     """
+    # PayU hosted checkout formula: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     hash_fields = [
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
         str(params.get("amount", "")).strip(),
         str(params.get("productinfo", "")).strip(),
-        str(params.get("firstname", "")).strip(),
-        str(params.get("email", "")).strip(),
+        str(params.get("firstname", "")).strip().lower(),
+        str(params.get("email", "")).strip().lower(),
         str(params.get("udf1", "")).strip(),
         str(params.get("udf2", "")).strip(),
         str(params.get("udf3", "")).strip(),
@@ -47,7 +48,7 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         str(params.get("udf9", "")).strip(),
         str(params.get("udf10", "")).strip(),
     ]
-    hash_str = "|".join(hash_fields) + f"|{salt}"
+    hash_str = "|".join(hash_fields) + "|" + salt
     
     try:
         frappe.log_error("Raw PayU Hash String", f"String: '{hash_str}'\nParams: {params}")
