@@ -11,18 +11,16 @@ frappe.listview_settings['ITR Filing Submission'] = {
     // Ensure the list always loads fresh (bypass Frappe's route cache)
     // -----------------------------------------------------------------------
     onload: function (listview) {
-        // Clear all filters on load to ensure all 11+ clients are visible.
+        // Clear all filters once on load to ensure everyone is visible.
         // This fixes the "record not reflected" issue if stale filters are present.
-        if (listview.filter_area) {
+        if (listview.filter_area && !listview.list_view_filters_cleared) {
             listview.filter_area.clear_filters();
+            listview.list_view_filters_cleared = true;
         }
         
-        // Force page length and sort order
-        listview.page_length = 20;
+        // Ensure standard sorting
         listview.sort_by = 'name';
         listview.sort_order = 'desc';
-        
-        listview.refresh();
     },
 
     // -----------------------------------------------------------------------
@@ -44,5 +42,12 @@ frappe.listview_settings['ITR Filing Submission'] = {
             const color = colors[value] || 'var(--gray-500)';
             return `<span style="color: ${color}; font-weight: 600;">${value || ''}</span>`;
         },
+        regional_manager: function(value) {
+            // Show initials + name if needed, or just capitalize the email name
+            if (!value) return "";
+            // If it's an email like john@google.com, make it 'John (google)'
+            const name = value.split('@')[0];
+            return `<span style="font-weight: 500;">${name.charAt(0).toUpperCase() + name.slice(1)}</span>`;
+        }
     },
 };
