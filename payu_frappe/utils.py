@@ -95,6 +95,11 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             # Standard Text
             message_data["message"] = message_text
 
+        if template_id:
+            message_data["template_id"] = template_id
+            if template_params:
+                message_data["template_message"] = template_params
+
         if media_url:
             message_data["media"] = media_url
             if media_header:
@@ -109,9 +114,6 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             "application": settings.application_id,
             "data": [message_data]
         }
-
-        if template_id:
-            payload["template_id"] = template_id
 
         url = "https://app.pickyassist.com/api/v2/push"
         response = requests.post(url, json=payload, timeout=15)
