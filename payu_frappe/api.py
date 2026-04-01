@@ -60,7 +60,7 @@ def submit_itr_details():
         doc.full_name = (
             data.get("fullName") or data.get("full_name") or data.get("name")
         )
-        doc.email = data.get("email")
+        doc.email = data.get("email") or data.get("email_id") or data.get("emailId")
 
         ty = data.get("taxYear") or "2025-26"
         if ty and "AY" not in ty:
@@ -296,6 +296,7 @@ def get_whatsapp_history(itr_submission):
     )
 
 
+@frappe.whitelist(allow_guest=True)
 @frappe.whitelist(allow_guest=True)
 def handle_whatsapp_webhook():
     """
