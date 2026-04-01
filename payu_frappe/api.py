@@ -418,19 +418,20 @@ def get_checkout_details(request_id):
 
     # Format txnid tightly to avoid PayU's 25-character max-length limit
     # e.g. ITR-SUB-00019 (13 chars) + '-' + 2603281045 (10 chars) = 24 chars
-    time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M')
+    # shortened to 8 chars to avoid 25-char limit
+    time_str = frappe.utils.now_datetime().strftime('%y%m%d%S')
     txnid = f"{doc.name}-{time_str}"
     
-    # PayU strictly expects '2000' or '2000.00', but 2 decimal places is the safest format
+    # Amount with exactly 2 decimal places
     amt_val = float(doc.service_amount or 0)
     amount = f"{amt_val:.2f}"
 
     params = {
-        "key": settings["key"],
+        "key": str(settings["key"]).strip(),
         "txnid": txnid,
         "amount": amount,
-        "productinfo": "ITR Filing",
-        "firstname": doc.full_name or "Client",
+        "productinfo": "ITR_Filing",
+        "firstname": str(doc.full_name or "Client").strip(),
         "email": doc.email or "test@example.com",
         "phone": doc.mobile_number or "9999999999",
         "surl": get_url("/api/method/payu_frappe.api.handle_callback"),

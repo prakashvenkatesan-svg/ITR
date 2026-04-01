@@ -30,22 +30,22 @@ def generate_payu_hash(params: dict, salt: str) -> str:
     key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     """
     hash_fields = [
-        str(params.get("key", "")),
-        str(params.get("txnid", "")),
-        str(params.get("amount", "")),
-        str(params.get("productinfo", "")),
-        str(params.get("firstname", "")),
-        str(params.get("email", "")),
-        str(params.get("udf1", "")),
-        str(params.get("udf2", "")),
-        str(params.get("udf3", "")),
-        str(params.get("udf4", "")),
-        str(params.get("udf5", "")),
-        str(params.get("udf6", "")),
-        str(params.get("udf7", "")),
-        str(params.get("udf8", "")),
-        str(params.get("udf9", "")),
-        str(params.get("udf10", "")),
+        str(params.get("key", "")).strip(),
+        str(params.get("txnid", "")).strip(),
+        str(params.get("amount", "")).strip(),
+        str(params.get("productinfo", "")).strip(),
+        str(params.get("firstname", "")).strip(),
+        str(params.get("email", "")).strip(),
+        str(params.get("udf1", "")).strip(),
+        str(params.get("udf2", "")).strip(),
+        str(params.get("udf3", "")).strip(),
+        str(params.get("udf4", "")).strip(),
+        str(params.get("udf5", "")).strip(),
+        str(params.get("udf6", "")).strip(),
+        str(params.get("udf7", "")).strip(),
+        str(params.get("udf8", "")).strip(),
+        str(params.get("udf9", "")).strip(),
+        str(params.get("udf10", "")).strip(),
     ]
     hash_str = "|".join(hash_fields) + f"|{salt}"
     
