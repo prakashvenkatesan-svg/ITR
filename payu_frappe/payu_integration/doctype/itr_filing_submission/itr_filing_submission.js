@@ -173,6 +173,7 @@ function open_whatsapp_dialog(frm) {
             </div>
             <div class="wa-chat-footer">
                 <i class="fa fa-paperclip wa-footer-icon" id="wa-attach-trigger" title="Attach File"></i>
+                <i class="fa fa-list-alt wa-footer-icon" id="wa-template-trigger" title="Send Template"></i>
                 <div class="wa-input-container">
                     <i class="fa fa-smile-o wa-footer-icon"></i>
                     <input type="text" id="wa-dialog-input" placeholder="Type a message">
@@ -192,6 +193,7 @@ function open_whatsapp_dialog(frm) {
     const $input = $wa_wrapper.find('#wa-dialog-input');
     const $send = $wa_wrapper.find('#wa-dialog-send');
     const $attach = $wa_wrapper.find('#wa-attach-trigger');
+    const $template = $wa_wrapper.find('#wa-template-trigger');
 
     // Load History
     fetch_wa_history(frm, $body);
@@ -214,12 +216,73 @@ function open_whatsapp_dialog(frm) {
         });
     });
 
+    // Template Logic
+    $template.on('click', () => {
+        frappe.call({
+            method: 'payu_frappe.api.get_picky_assist_templates',
+            callback: (r) => {
+                if (r.message && r.message.length > 0) {
+                    show_template_popup(frm, $wa_wrapper, r.message);
+                } else {
+                    frappe.msgprint(__('No templates found. Add them in "Picky Assist Template" first.'));
+                }
+            }
+        });
+    });
+
     // Real-time
     frappe.realtime.on('whatsapp_notification', (data) => {
         if (data.rm === frappe.session.user) {
             fetch_wa_history(frm, $body, true);
         }
     });
+}
+
+function show_template_popup(frm, wa_wrapper, templates) {
+    const d = new frappe.ui.Dialog({
+        title: __('Send WhatsApp Template'),
+        fields: [
+            {
+                label: __('Select Template'),
+                fieldname: 'template',
+                fieldtype: 'Select',
+                options: templates.map(t => t.template_name),
+                reqd: 1,
+                on_change: () => {
+                    const selected = templates.find(t => t.template_name === d.get_value('template'));
+                    d.set_df_property('preview', 'options', `<b>Preview:</b><br>${selected.message_body || 'No preview available'}`);
+                    
+                    // Count placeholders {{1}}, {{2}}...
+                    const matches = (selected.message_body || "").match(/{{(\d+)}}/g);
+                    const count = matches ? (new Set(matches)).size : 0; // Unique placeholder count
+                    
+                    for(let i=1; i<=5; i++) {
+                        d.set_df_property(`p${i}`, 'hidden', i > count);
+                    }
+                }
+            },
+            { fieldname: 'preview', fieldtype: 'HTML' },
+            { fieldname: 'p1', fieldtype: 'Data', label: __('Value for {{1}}'), hidden: 1 },
+            { fieldname: 'p2', fieldtype: 'Data', label: __('Value for {{2}}'), hidden: 1 },
+            { fieldname: 'p3', fieldtype: 'Data', label: __('Value for {{3}}'), hidden: 1 },
+            { fieldname: 'p4', fieldtype: 'Data', label: __('Value for {{4}}'), hidden: 1 },
+            { fieldname: 'p5', fieldtype: 'Data', label: __('Value for {{5}}'), hidden: 1 }
+        ],
+        primary_action_label: __('Send Template'),
+        primary_action: (values) => {
+            const selected = templates.find(t => t.template_name === values.template);
+            const params = [];
+            if (values.p1) params.push(values.p1);
+            if (values.p2) params.push(values.p2);
+            if (values.p3) params.push(values.p3);
+            if (values.p4) params.push(values.p4);
+            if (values.p5) params.push(values.p5);
+
+            send_wa_msg_popup(frm, wa_wrapper, null, null, selected.template_id, params);
+            d.hide();
+        }
+    });
+    d.show();
 }
 
 function fetch_wa_history(frm, body, scroll = false) {
@@ -248,25 +311,27 @@ function fetch_wa_history(frm, body, scroll = false) {
                 if (scroll) body.scrollTop(body[0].scrollHeight);
                 else setTimeout(() => body.scrollTop(body[0].scrollHeight), 200);
             } else {
-                body.append('<div style="text-align: center; color: #888; font-size: 12px; margin-top: 20px;">No messages yet.</div>');
+                body.append('<div style="text-align: center; color: #999; margin-top: 50px;">No messages yet</div>');
             }
         }
     });
 }
 
-function send_wa_msg_popup(frm, wrapper, override_text = null, media_url = null) {
+function send_wa_msg_popup(frm, wrapper, override_text = null, media_url = null, template_id = null, template_params = null) {
     const $input = wrapper.find('#wa-dialog-input');
     const text = override_text || $input.val().trim();
-    if (!text && !media_url) return;
+    if (!text && !media_url && !template_id) return;
 
-    if (!override_text) $input.val('').prop('disabled', true);
+    if (!override_text && !template_id) $input.val('').prop('disabled', true);
 
     frappe.call({
         method: 'payu_frappe.api.send_manual_whatsapp',
         args: {
             docname: frm.doc.name,
             message: text,
-            media_url: media_url
+            media_url: media_url,
+            template_id: template_id,
+            template_params: template_params
         },
         callback: (r) => {
             $input.prop('disabled', false).focus();

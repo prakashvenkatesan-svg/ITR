@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "allow_guest_to_view": 0,
+ "allow_import": 0,
+ "allow_rename": 0,
+ "autoname": "PAT-.#####",
+ "creation": "2026-04-01 12:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_info",
+  "template_name",
+  "template_id",
+  "language",
+  "section_content",
+  "message_body",
+  "has_media",
+  "has_buttons"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_info",
+   "fieldtype": "Section Break",
+   "label": "Template Identification"
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template Name",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "template_id",
+   "fieldtype": "Data",
+   "label": "Template ID (V4/V2)",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Found in Picky Assist Dashboard"
+  },
+  {
+   "fieldname": "language",
+   "fieldtype": "Select",
+   "label": "Language",
+   "options": "en\nhi\ngu",
+   "default": "en"
+  },
+  {
+   "fieldname": "section_content",
+   "fieldtype": "Section Break",
+   "label": "Content Structure"
+  },
+  {
+   "fieldname": "message_body",
+   "fieldtype": "Small Text",
+   "label": "Sample Message Body",
+   "description": "Copy-paste for reference. Use {{1}}, {{2}} for placeholders."
+  },
+  {
+   "fieldname": "has_media",
+   "fieldtype": "Check",
+   "label": "Has Media Header"
+  },
+  {
+   "fieldname": "has_buttons",
+   "fieldtype": "Check",
+   "label": "Has Interactive Buttons"
+  }
+ ],
+ "links": [],
+ "modified": "2026-04-01 12:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "PayU Integration",
+ "name": "Picky Assist Template",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "template_name",
+ "sort_order": "ASC",
+ "states": []
+}

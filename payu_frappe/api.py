@@ -245,21 +245,41 @@ def submit_itr_details():
 
 
 @frappe.whitelist(allow_guest=True)
-def send_manual_whatsapp(docname, message, media_url=None):
+def send_manual_whatsapp(docname, message=None, media_url=None, template_id=None, template_params=None, buttons=None):
     """
-    Called from the integrated WhatsApp Chat Dialog in ITR Filing Submission.
+    Called from the manual chat dialog (supports templates and buttons).
     """
     from payu_frappe.utils import send_whatsapp_message
     doc = frappe.get_doc("ITR Filing Submission", docname)
     
+    if template_params and isinstance(template_params, str):
+        template_params = frappe.parse_json(template_params)
+
+    if buttons and isinstance(buttons, str):
+        buttons = frappe.parse_json(buttons)
+
     res = send_whatsapp_message(
         receiver_number=doc.mobile_number,
         message_text=message,
         media_url=media_url,
         itr_submission=doc.name,
-        regional_manager=doc.regional_manager or frappe.session.user
+        regional_manager=doc.regional_manager or frappe.session.user,
+        template_id=template_id,
+        template_params=template_params,
+        buttons=buttons
     )
     return res
+
+
+@frappe.whitelist()
+def get_picky_assist_templates():
+    """
+    Fetch all local template configurations for the UI dropdown.
+    """
+    return frappe.get_all(
+        "Picky Assist Template",
+        fields=["name", "template_id", "template_name", "message_body", "has_buttons", "language"]
+    )
 
 
 @frappe.whitelist(allow_guest=True)

@@ -65,10 +65,10 @@ def verify_payu_hash(data: dict, salt: str) -> bool:
     return received_hash.lower() == expected_hash.lower()
 
 
-def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None):
+def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None, template_id=None, template_params=None, buttons=None, media_header=None):
     """
-    Sends a WhatsApp message via Picky Assist V2 Push API.
-    Log the message in the WhatsApp Message DocType.
+    Sends a WhatsApp message via Picky Assist Push API (V2/V4).
+    Supports Text, Media, Templates, and Interactive Buttons.
     """
     import requests
     import json
@@ -83,12 +83,26 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not clean_number.startswith("91") and len(clean_number) == 10:
             clean_number = "91" + clean_number
 
-        message_data = {
-            "number": clean_number,
-            "message": message_text
-        }
+        # Core message data
+        message_data = { "number": clean_number }
+
+        if template_id:
+            # V4 Template Logic
+            # template_params should be a list of strings for {{1}}, {{2}}...
+            message_data["template_message"] = template_params or []
+            message_data["language"] = "en"
+        else:
+            # Standard Text
+            message_data["message"] = message_text
+
         if media_url:
             message_data["media"] = media_url
+            if media_header:
+                message_data["template_header"] = media_header
+        
+        if buttons:
+            # V4 Interactive Buttons (payload)
+            message_data["payload"] = buttons
 
         payload = {
             "token": settings.get_password("api_token"),
@@ -96,16 +110,23 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             "data": [message_data]
         }
 
+        if template_id:
+            payload["template_id"] = template_id
+
         url = "https://app.pickyassist.com/api/v2/push"
         response = requests.post(url, json=payload, timeout=15)
         res_data = response.json()
 
-        # Log the message in Database
+        # Log the message
+        log_content = message_text
+        if template_id:
+            log_content = f"[Template: {template_id}] Values: {template_params}"
+
         log_doc = frappe.get_doc({
             "doctype": "Picky Assist Message",
             "direction": "Outbound",
             "mobile_number": clean_number,
-            "message": message_text,
+            "message": log_content,
             "media_url": media_url,
             "itr_submission": itr_submission,
             "regional_manager": regional_manager or frappe.session.user,
@@ -115,7 +136,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         frappe.db.commit()
 
         if res_data.get("status") == "success":
-            return {"status": "Success", "data": res_data}
+            return {"status": "Success", "data": res_data, "id": log_doc.name}
         else:
             return {"status": "Error", "error": res_data.get("message", "Unknown Picky Assist Error")}
 
