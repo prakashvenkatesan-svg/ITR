@@ -335,11 +335,18 @@ function send_wa_msg_popup(frm, wrapper, override_text = null, media_url = null,
         },
         callback: (r) => {
             $input.prop('disabled', false).focus();
-            if (r.message && r.message.status === 'Success') {
+            const status = r.message ? (r.message.status || "").toLowerCase() : "";
+            
+            if (status === 'success') {
                 const $body = wrapper.find('#wa-dialog-body');
                 fetch_wa_history(frm, $body, true);
             } else {
-                frappe.show_alert({ message: __('Failed: ') + (r.message ? r.message.error : 'Error'), indicator: 'red' });
+                const msg = (r.message && r.message.error) ? r.message.error : 'Unknown error';
+                frappe.show_alert({ message: __('WhatsApp: ') + msg, indicator: 'red' });
+                
+                // Still try to refresh history just in case it was logged
+                const $body = wrapper.find('#wa-dialog-body');
+                fetch_wa_history(frm, $body, true);
             }
         }
     });

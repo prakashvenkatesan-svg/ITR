@@ -135,10 +135,15 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         log_doc.insert(ignore_permissions=True)
         frappe.db.commit()
 
-        if res_data.get("status") == "success":
+        # Handle case-insensitive status from Picky Assist
+        api_status = str(res_data.get("status", "")).lower()
+        
+        if api_status == "success":
             return {"status": "Success", "data": res_data, "id": log_doc.name}
         else:
-            return {"status": "Error", "error": res_data.get("message", "Unknown Picky Assist Error")}
+            # Check if there is an error message, otherwise show the status itself
+            error_msg = res_data.get("message") or res_data.get("status") or "Unknown Picky Assist Error"
+            return {"status": "Error", "error": error_msg}
 
     except Exception as e:
         frappe.log_error(title="WhatsApp Send Error", message=frappe.get_traceback())
