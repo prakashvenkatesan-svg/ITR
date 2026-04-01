@@ -436,11 +436,16 @@ def get_checkout_details(request_id):
         "surl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "furl": get_url("/api/method/payu_frappe.api.handle_callback"),
         "service_provider": "payu_paisa",
-        "udf1": "",
+        "udf1": doc.name,
         "udf2": "",
         "udf3": "",
         "udf4": "",
         "udf5": "",
+        "udf6": "",
+        "udf7": "",
+        "udf8": "",
+        "udf9": "",
+        "udf10": "",
     }
 
     params["hash"] = generate_payu_hash(params, settings["salt"])

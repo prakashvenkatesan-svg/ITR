@@ -27,12 +27,28 @@ def get_payu_settings():
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
     PayU hash formula (SHA-512):
-    key|txnid|amount|productinfo|firstname|email|||||||||||SALT
+    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     """
-    hash_str = (
-        f"{params.get('key','')}|{params.get('txnid','')}|{params.get('amount','')}|"
-        f"{params.get('productinfo','')}|{params.get('firstname','')}|{params.get('email','')}|||||||||||{salt}"
-    )
+    hash_fields = [
+        str(params.get("key", "")),
+        str(params.get("txnid", "")),
+        str(params.get("amount", "")),
+        str(params.get("productinfo", "")),
+        str(params.get("firstname", "")),
+        str(params.get("email", "")),
+        str(params.get("udf1", "")),
+        str(params.get("udf2", "")),
+        str(params.get("udf3", "")),
+        str(params.get("udf4", "")),
+        str(params.get("udf5", "")),
+        str(params.get("udf6", "")),
+        str(params.get("udf7", "")),
+        str(params.get("udf8", "")),
+        str(params.get("udf9", "")),
+        str(params.get("udf10", "")),
+    ]
+    hash_str = "|".join(hash_fields) + f"|{salt}"
+    
     try:
         frappe.log_error("Raw PayU Hash String", f"String: '{hash_str}'\nParams: {params}")
     except Exception:
@@ -43,24 +59,38 @@ def generate_payu_hash(params: dict, salt: str) -> str:
 def verify_payu_hash(data: dict, salt: str) -> bool:
     """
     Verify the reverse hash returned by PayU after payment.
+    Hash Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
     """
     received_hash = data.get("hash", "")
     additional_charges = data.get("additionalCharges")
-
+    
+    # Reverse string components in the correct PayU-specified order
+    reverse_fields = [
+        str(data.get("status", "")),
+        str(data.get("udf10", "")),
+        str(data.get("udf9", "")),
+        str(data.get("udf8", "")),
+        str(data.get("udf7", "")),
+        str(data.get("udf6", "")),
+        str(data.get("udf5", "")),
+        str(data.get("udf4", "")),
+        str(data.get("udf3", "")),
+        str(data.get("udf2", "")),
+        str(data.get("udf1", "")),
+        str(data.get("email", "")),
+        str(data.get("firstname", "")),
+        str(data.get("productinfo", "")),
+        str(data.get("amount", "")),
+        str(data.get("txnid", "")),
+        str(data.get("key", "")),
+    ]
+    
+    reverse_str = f"{salt}|" + "|".join(reverse_fields)
+    
+    # If additionalCharges are present, they are prepended with an extra pipe
     if additional_charges:
-        reverse_str = (
-            f"{additional_charges}|{salt}|{data.get('status','')}|||||||||||"
-            f"{data.get('email','')}|{data.get('firstname','')}|"
-            f"{data.get('productinfo','')}|{data.get('amount','')}|"
-            f"{data.get('txnid','')}|{data.get('key','')}"
-        )
-    else:
-        reverse_str = (
-            f"{salt}|{data.get('status','')}|||||||||||"
-            f"{data.get('email','')}|{data.get('firstname','')}|"
-            f"{data.get('productinfo','')}|{data.get('amount','')}|"
-            f"{data.get('txnid','')}|{data.get('key','')}"
-        )
+        reverse_str = f"{additional_charges}|{reverse_str}"
+        
     expected_hash = hashlib.sha512(reverse_str.encode("utf-8")).hexdigest()
     return received_hash.lower() == expected_hash.lower()
 
