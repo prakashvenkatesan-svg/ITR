@@ -30,7 +30,7 @@ def get_payu_settings():
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
     PayU hash formula (exactly 16 pipes):
-    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
+    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
     """
     hash_fields = [
         str(params.get("key", "")).strip(),
@@ -40,13 +40,16 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         str(params.get("firstname", "")).strip(),
         str(params.get("email", "")).strip(),
         str(params.get("udf1", "")).strip(),
-        "", "", "", "", "", "", "", "", ""  # udf2 -> udf10
+        str(params.get("udf2", "")).strip(),
+        str(params.get("udf3", "")).strip(),
+        str(params.get("udf4", "")).strip(),
+        str(params.get("udf5", "")).strip(),
     ]
-    
-    # join gives 15 pipes, + "|" + salt gives the 16th pipe
-    hash_str = "|".join(hash_fields) + "|" + salt.strip()
 
-    frappe.log_error("FINAL HASH STRING DEBUG", repr(hash_str))
+    # join(11 fields) gives 10 pipes, + "||||||" gives exactly 16 pipes total
+    hash_str = "|".join(hash_fields) + "||||||" + salt.strip()
+
+    frappe.log_error("FINAL HASH STRING", repr(hash_str))
 
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
