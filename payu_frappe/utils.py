@@ -46,7 +46,7 @@ def generate_payu_hash(params: dict, salt: str) -> str:
     # join gives 15 pipes, + "|" + salt gives the 16th pipe
     hash_str = "|".join(hash_fields) + "|" + salt.strip()
 
-    frappe.log_error("FINAL CORRECT HASH STRING", hash_str)
+    frappe.log_error("FINAL HASH STRING DEBUG", repr(hash_str))
 
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 

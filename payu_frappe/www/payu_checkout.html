@@ -41,7 +41,6 @@
 <!-- Hidden PayU auto-submit form -->
 <form id="payu-form" method="post">
     <input type="hidden" name="key" id="f_key">
-    <input type="hidden" name="merchant_id" id="f_merchant_id">
     <input type="hidden" name="txnid" id="f_txnid">
     <input type="hidden" name="amount" id="f_amount">
     <input type="hidden" name="productinfo" id="f_productinfo">
@@ -61,6 +60,7 @@
     <input type="hidden" name="udf8" id="f_udf8">
     <input type="hidden" name="udf9" id="f_udf9">
     <input type="hidden" name="udf10" id="f_udf10">
+    <input type="hidden" name="service_provider" value="payu_paisa">
 </form>
 
 <script>
@@ -84,7 +84,6 @@
 
         document.getElementById('payu-form').action = url;
         document.getElementById('f_key').value          = p.key;
-        document.getElementById('f_merchant_id').value  = p.merchant_id || '';
         document.getElementById('f_txnid').value        = p.txnid;
         document.getElementById('f_amount').value       = p.amount;
         document.getElementById('f_productinfo').value  = p.productinfo;
