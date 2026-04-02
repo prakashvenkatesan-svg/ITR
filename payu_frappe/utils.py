@@ -32,24 +32,32 @@ def generate_payu_hash(params: dict, salt: str) -> str:
     PayU hash formula (exactly 16 pipes):
     key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
     """
+    # CRITICAL: Always format amount to 2 decimal places
+    amount_str = "{:.2f}".format(float(params.get("amount", 0)))
+    
+    # CRITICAL: All udf fields must be strings, never None
+    udf1 = str(params.get("udf1", "")).strip()
+    udf2 = str(params.get("udf2", "")).strip()
+    udf3 = str(params.get("udf3", "")).strip()
+    udf4 = str(params.get("udf4", "")).strip()
+    udf5 = str(params.get("udf5", "")).strip()
+
+    # Build the 16-pipe string exactly as PayU expects
     hash_fields = [
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
-        str(params.get("amount", "")).strip(),
+        amount_str,
         str(params.get("productinfo", "")).strip(),
         str(params.get("firstname", "")).strip(),
         str(params.get("email", "")).strip(),
-        str(params.get("udf1", "")).strip(),
-        str(params.get("udf2", "")).strip(),
-        str(params.get("udf3", "")).strip(),
-        str(params.get("udf4", "")).strip(),
-        str(params.get("udf5", "")).strip(),
+        udf1, udf2, udf3, udf4, udf5
     ]
-
+    
     # join(11 fields) gives 10 pipes, + "||||||" gives exactly 16 pipes total
     hash_str = "|".join(hash_fields) + "||||||" + salt.strip()
 
-    frappe.log_error("FINAL HASH STRING", repr(hash_str))
+    # DEBUG: Check Frappe Error Log to see the exact string before hashing
+    frappe.log_error("PAYU HASH STRING DEBUG", repr(hash_str))
 
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
@@ -57,8 +65,21 @@ def generate_payu_hash(params: dict, salt: str) -> str:
 def verify_payu_hash(data: dict, salt: str) -> bool:
     """
     Verify the reverse hash returned by PayU after payment.
-    Hash Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+    Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
     """
+    status = data.get("status", "")
+    amount_str = "{:.2f}".format(float(data.get("amount", 0)))
+    received_hash = data.get("hash", "")
+    
+    # Reverse fields (u10 to u6 are typically empty in our current setup)
+    u5, u4, u3, u2, u1 = data.get("udf5", ""), data.get("udf4", ""), data.get("udf3", ""), data.get("udf2", ""), data.get("udf1", "")
+    
+    # Formula: SALT|status|ud10|ud9|ud8|ud7|ud6|ud5|ud4|ud3|ud2|ud1|email|firstname|productinfo|amount|txnid|key
+    # Note: 5 empty pipes between status and udf5 represent udf10-udf6
+    hash_str = f"{salt.strip()}|{status}|||||{u5}|{u4}|{u3}|{u2}|{u1}|{data.get('email','')}|{data.get('firstname','')}|{data.get('productinfo','')}|{amount_str}|{data.get('txnid','')}|{data.get('key','')}"
+    
+    computed = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
+    return computed == received_hash
     received_hash = data.get("hash", "")
     additional_charges = data.get("additionalCharges")
     
