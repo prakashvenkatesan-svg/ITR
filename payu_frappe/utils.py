@@ -29,35 +29,25 @@ def get_payu_settings():
 
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
-    PayU hash formula (SHA-512):
-    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
+    PayU hash formula (exactly 16 pipes):
+    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
     """
-    # PayU hosted checkout formula (exactly 16 pipes):
-    # key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
-    hash_fields = [
+    hash_str = "|".join([
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
         str(params.get("amount", "")).strip(),
         str(params.get("productinfo", "")).strip(),
-        str(params.get("firstname", "")).strip().lower(),
-        str(params.get("email", "")).strip().lower(),
+        str(params.get("firstname", "")).strip(),
+        str(params.get("email", "")).strip(),
         str(params.get("udf1", "")).strip(),
         str(params.get("udf2", "")).strip(),
         str(params.get("udf3", "")).strip(),
         str(params.get("udf4", "")).strip(),
         str(params.get("udf5", "")).strip(),
-        str(params.get("udf6", "")).strip(),
-        str(params.get("udf7", "")).strip(),
-        str(params.get("udf8", "")).strip(),
-        str(params.get("udf9", "")).strip(),
-        str(params.get("udf10", "")).strip(),
-    ]
-    hash_str = "|".join(hash_fields) + "|" + salt.strip()
-    
-    try:
-        frappe.log_error("Raw PayU Hash String", f"String: '{hash_str}'\nParams: {params}")
-    except Exception:
-        pass
+    ]) + "||||||" + salt.strip()
+
+    frappe.log_error("Correct PayU Hash String", hash_str)
+
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
 
