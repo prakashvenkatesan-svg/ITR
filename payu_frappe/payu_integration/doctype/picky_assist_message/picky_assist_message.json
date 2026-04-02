@@ -14,6 +14,9 @@
   "mobile_number",
   "itr_submission",
   "regional_manager",
+  "contact",
+  "message_type",
+  "status",
   "section_content",
   "message",
   "media_url",
@@ -50,6 +53,26 @@
    "fieldtype": "Link",
    "label": "Regional Manager",
    "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Link",
+   "label": "Contact",
+   "options": "Contact"
+  },
+  {
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "label": "Message Type",
+   "options": "Text\nMedia\nTemplate",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nSent\nDelivered\nRead\nReceived\nFailed",
    "in_list_view": 1
   },
   {

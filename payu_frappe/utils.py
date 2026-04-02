@@ -151,6 +151,40 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if template_id:
             log_content = f"[Template: {template_id}] Values: {template_params}"
 
+        # Resolve or Create Contact
+        contact = None
+        if itr_submission:
+            client_data = frappe.db.get_value("ITR Filing Submission", itr_submission, ["full_name", "email"], as_dict=1)
+            
+            # Find existing contact by mobile or email
+            contact_name = frappe.db.get_value("Contact", {"mobile_no": ["like", f"%{clean_number[-10:]}"]}, "name")
+            if not contact_name and client_data and client_data.email:
+                contact_name = frappe.db.get_value("Contact", {"email_id": client_data.email}, "name")
+            
+            if contact_name:
+                contact = contact_name
+            elif client_data:
+                # Create a new Contact
+                new_contact = frappe.get_doc({
+                    "doctype": "Contact",
+                    "first_name": client_data.full_name,
+                    "email_id": client_data.email,
+                    "mobile_no": clean_number
+                })
+                new_contact.insert(ignore_permissions=True)
+                contact = new_contact.name
+
+        # Determine message type
+        msg_type = "Text"
+        if template_id:
+            msg_type = "Template"
+        elif media_url:
+            msg_type = "Media"
+
+        # Handle case-insensitive status from Picky Assist
+        api_status = str(res_data.get("status", "")).lower()
+        final_status = "Sent" if api_status == "success" else "Failed"
+
         log_doc = frappe.get_doc({
             "doctype": "Picky Assist Message",
             "direction": "Outbound",
@@ -158,19 +192,18 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             "message": log_content,
             "media_url": media_url,
             "itr_submission": itr_submission,
+            "contact": contact,
+            "message_type": msg_type,
+            "status": final_status,
             "regional_manager": regional_manager or frappe.session.user,
-            "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if res_data.get("status") == "success" else ""
+            "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if api_status == "success" else ""
         })
         log_doc.insert(ignore_permissions=True)
         frappe.db.commit()
 
-        # Handle case-insensitive status from Picky Assist
-        api_status = str(res_data.get("status", "")).lower()
-        
         if api_status == "success":
             return {"status": "Success", "data": res_data, "id": log_doc.name}
         else:
-            # Check if there is an error message, otherwise show the status itself
             error_msg = res_data.get("message") or res_data.get("status") or "Unknown Picky Assist Error"
             return {"status": "Error", "error": error_msg}
 

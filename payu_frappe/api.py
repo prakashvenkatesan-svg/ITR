@@ -299,7 +299,7 @@ def get_whatsapp_history(itr_submission):
     return frappe.get_all(
         "Picky Assist Message",
         filters={"mobile_number": ["like", f"%{clean_mobile}"]},
-        fields=["direction", "message", "creation", "media_url", "mobile_number", "itr_submission"],
+        fields=["direction", "message", "creation", "media_url", "mobile_number", "itr_submission", "status", "message_type"],
         order_by="creation asc"
     )
 
@@ -331,6 +331,14 @@ def handle_whatsapp_webhook():
     
     regional_manager = frappe.db.get_value("ITR Filing Submission", client_name, "regional_manager") if client_name else None
 
+    # Resolve Contact
+    contact = frappe.db.get_value("Contact", {"mobile_no": ["like", f"%{sender_number[-10:]}"]}, "name")
+
+    # Determine message type
+    msg_type = "Text"
+    if data.get("media") or data.get("file"):
+        msg_type = "Media"
+
     # Log the incoming message
     msg_doc = frappe.get_doc({
         "doctype": "Picky Assist Message",
@@ -338,6 +346,9 @@ def handle_whatsapp_webhook():
         "mobile_number": sender_number,
         "message": content,
         "itr_submission": client_name,
+        "contact": contact,
+        "message_type": msg_type,
+        "status": "Received",
         "regional_manager": regional_manager,
         "picky_assist_id": data.get("unique-id")
     })
