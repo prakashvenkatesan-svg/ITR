@@ -53,11 +53,11 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         udf1, udf2, udf3, udf4, udf5
     ]
     
-    # join(11 fields) gives 10 pipes, + "||||||" gives exactly 16 pipes total
-    hash_str = "|".join(hash_fields) + "||||||" + salt.strip()
+    # join(11 fields) gives 10 pipes, + "|||||" gives exactly 15 pipes total (16 segments)
+    hash_str = "|".join(hash_fields) + "|||||" + salt.strip()
 
     # DEBUG: Check Frappe Error Log to see the exact string before hashing
-    frappe.log_error("PAYU HASH STRING DEBUG", repr(hash_str))
+    frappe.log_error(title="PAYU HASH STRING DEBUG", message=repr(hash_str))
 
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
