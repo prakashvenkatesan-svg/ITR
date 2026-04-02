@@ -29,7 +29,7 @@ def get_payu_settings():
 
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
-    PayU Outbound Hash Formula (Must have exactly 16 pipes):
+    PayU Outbound Hash Formula (Exactly 16 pipes):
     sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT)
     """
     # CRITICAL: Always format amount to 2 decimal places
@@ -95,7 +95,7 @@ def verify_payu_hash(data: dict, salt: str) -> bool:
 
     hash_str = "|".join(reverse_segments)
 
-    # Optional: If additionalCharges field is present, prepend it with its own pipe
+    # If additionalCharges field is present, prepend it with its own pipe
     if additional_charges:
         hash_str = str(additional_charges) + "|" + hash_str
 

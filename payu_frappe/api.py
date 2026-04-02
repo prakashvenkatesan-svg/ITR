@@ -492,55 +492,97 @@ def get_checkout_details(request_id):
 def handle_callback():
     """
     PayU posts payment result here (both success & failure).
-    Verifies hash, logs transaction, updates ITR Filing Submission.
+    Verifies hash, logs transaction, and optionally verifies with PayU API.
     """
     data = frappe.form_dict
     settings = get_payu_settings()
 
-    if not verify_payu_hash(data, settings["salt"]):
-        frappe.log_error("Invalid PayU Hash received", "PayU Callback Security")
-        frappe.respond_as_web_page(
-            "Payment Error", "Security check failed. Please contact support."
-        )
-        return
-
+    # 1. Standard Hash Verification
+    hash_valid = verify_payu_hash(data, settings["salt"])
+    
+    # 2. Server-side API Verification (Mandatory Security Check)
+    api_verified = False
     txnid = data.get("txnid", "")
     request_ref = data.get("udf1", "")
+    
+    if txnid:
+        api_status = verify_payment_with_payu_api(txnid, settings)
+        if api_status and api_status.get("status") == "success":
+            txn_details = api_status.get("transaction_details", {}).get(txnid, {})
+            if txn_details.get("status") == "success":
+                api_verified = True
 
-
-    payment_status = "Success" if data.get("status") == "success" else "Failed"
-
+    # Log the attempt
     try:
-        tx_log = frappe.get_doc(
-            {
-                "doctype": "PayU Transaction Log",
-                "transaction_id": txnid,
-                "client_request_ref": request_ref,
-                "client_name": data.get("firstname", ""),
-                "client_mobile": data.get("phone", ""),
-                "client_email": data.get("email", ""),
-                "amount": data.get("amount"),
-                "status": payment_status,
-                "payment_method": data.get("mode", ""),
-                "upi_id": data.get("bank_ref_num", data.get("mihpayid", "")),
-                "response_data": frappe.as_json(dict(data)),
-                "payment_date": frappe.utils.now_datetime(),
-            }
-        )
+        tx_log = frappe.get_doc({
+            "doctype": "PayU Transaction Log",
+            "transaction_id": txnid,
+            "client_request_ref": request_ref,
+            "client_name": data.get("firstname", ""),
+            "client_mobile": data.get("phone", ""),
+            "client_email": data.get("email", ""),
+            "amount": data.get("amount"),
+            "status": "Success" if (hash_valid and api_verified and data.get("status") == "success") else "Failed",
+            "payment_method": data.get("mode", ""),
+            "upi_id": data.get("bank_ref_num", data.get("mihpayid", "")),
+            "response_data": frappe.as_json(dict(data)),
+            "payment_date": frappe.utils.now_datetime(),
+        })
         tx_log.insert(ignore_permissions=True)
-
-        if request_ref and frappe.db.exists("ITR Filing Submission", request_ref):
-            req_doc = frappe.get_doc("ITR Filing Submission", request_ref)
-            req_doc.payment_status = payment_status
-            req_doc.save(ignore_permissions=True)
-
         frappe.db.commit()
     except Exception as e:
-        frappe.log_error(str(e), "PayU Callback Error")
+        frappe.log_error(f"PayU Log Error: {str(e)}", "PayU Integration")
 
-    if data.get("status") == "success":
+    # Final Decision
+    if hash_valid and api_verified and data.get("status") == "success":
+        if request_ref and frappe.db.exists("ITR Filing Submission", request_ref):
+            req_doc = frappe.get_doc("ITR Filing Submission", request_ref)
+            req_doc.payment_status = "Paid"
+            req_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-success"
     else:
+        # If hash is valid but API failed, log as potential security risk
+        if hash_valid and not api_verified and data.get("status") == "success":
+            frappe.log_error(f"Potential Fraud Attempt: Hash valid but API status failed for {txnid}", "PayU Security")
+
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-failed"
+
+
+def verify_payment_with_payu_api(txnid, settings):
+    """
+    Calls PayU Verify Payment API (server-to-server) to confirm transaction status.
+    Formula: sha512(key|command|var1|salt)
+    """
+    import hashlib
+    import requests
+    
+    key = settings["key"]
+    salt = settings["salt"]
+    command = "verify_payment"
+    var1 = txnid
+    
+    # Calculate API Hash
+    hash_str = f"{key}|{command}|{var1}|{salt}"
+    api_hash = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
+    
+    # Use appropriate endpoint
+    url = "https://test.payu.in/merchant/postservice?form=2" if settings["is_sandbox"] else "https://info.payu.in/merchant/postservice?form=2"
+    
+    payload = {
+        "key": key,
+        "command": command,
+        "var1": var1,
+        "hash": api_hash
+    }
+    
+    try:
+        response = requests.post(url, data=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        frappe.log_error(f"PayU Verify API Error: {str(e)}", "PayU Integration")
+        return None
