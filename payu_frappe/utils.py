@@ -63,55 +63,39 @@ def generate_payu_hash(params: dict, salt: str) -> str:
 
 
 def verify_payu_hash(data: dict, salt: str) -> bool:
-    """
-    Verify the reverse hash returned by PayU after payment.
-    Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
-    """
-    status = data.get("status", "")
-    amount_str = "{:.2f}".format(float(data.get("amount", 0)))
-    received_hash = data.get("hash", "")
-    
-    # Reverse fields (u10 to u6 are typically empty in our current setup)
-    u5, u4, u3, u2, u1 = data.get("udf5", ""), data.get("udf4", ""), data.get("udf3", ""), data.get("udf2", ""), data.get("udf1", "")
-    
-    # Formula: SALT|status|ud10|ud9|ud8|ud7|ud6|ud5|ud4|ud3|ud2|ud1|email|firstname|productinfo|amount|txnid|key
-    # Note: 5 empty pipes between status and udf5 represent udf10-udf6
-    hash_str = f"{salt.strip()}|{status}|||||{u5}|{u4}|{u3}|{u2}|{u1}|{data.get('email','')}|{data.get('firstname','')}|{data.get('productinfo','')}|{amount_str}|{data.get('txnid','')}|{data.get('key','')}"
-    
-    computed = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
-    return computed == received_hash
     received_hash = data.get("hash", "")
     additional_charges = data.get("additionalCharges")
-    
-    # Reverse string components in the correct PayU-specified order
+
+    # Amount must match exactly what PayU sends back
+    amount_str = "{:.2f}".format(float(data.get("amount", 0)))
+
     reverse_fields = [
         str(data.get("status", "")),
-        str(data.get("udf10", "")),
-        str(data.get("udf9", "")),
-        str(data.get("udf8", "")),
-        str(data.get("udf7", "")),
-        str(data.get("udf6", "")),
-        str(data.get("udf5", "")),
-        str(data.get("udf4", "")),
-        str(data.get("udf3", "")),
-        str(data.get("udf2", "")),
-        str(data.get("udf1", "")),
+        str(data.get("udf10", "") or ""),
+        str(data.get("udf9", "") or ""),
+        str(data.get("udf8", "") or ""),
+        str(data.get("udf7", "") or ""),
+        str(data.get("udf6", "") or ""),
+        str(data.get("udf5", "") or ""),
+        str(data.get("udf4", "") or ""),
+        str(data.get("udf3", "") or ""),
+        str(data.get("udf2", "") or ""),
+        str(data.get("udf1", "") or ""),
         str(data.get("email", "")),
         str(data.get("firstname", "")),
         str(data.get("productinfo", "")),
-        str(data.get("amount", "")),
+        amount_str,
         str(data.get("txnid", "")),
         str(data.get("key", "")),
     ]
-    
-    reverse_str = f"{salt}|" + "|".join(reverse_fields)
-    
-    # If additionalCharges are present, they are prepended with an extra pipe
+
+    reverse_str = salt.strip() + "|" + "|".join(reverse_fields)
+
     if additional_charges:
-        reverse_str = f"{additional_charges}|{reverse_str}"
-        
-    expected_hash = hashlib.sha512(reverse_str.encode("utf-8")).hexdigest()
-    return received_hash.lower() == expected_hash.lower()
+        reverse_str = str(additional_charges) + "|" + reverse_str
+
+    computed = hashlib.sha512(reverse_str.encode("utf-8")).hexdigest()
+    return computed.lower() == received_hash.lower()
 
 
 def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None, template_id=None, template_params=None, buttons=None, media_header=None):
