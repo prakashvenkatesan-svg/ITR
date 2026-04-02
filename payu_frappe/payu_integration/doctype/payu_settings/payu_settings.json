@@ -4,6 +4,7 @@
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
+        "merchant_id",
         "merchant_key",
         "merchant_salt",
         "is_sandbox",
@@ -11,6 +12,7 @@
         "production_url"
     ],
     "fields": [
+        {"fieldname": "merchant_id", "fieldtype": "Data", "label": "Merchant ID"},
         {"fieldname": "merchant_key", "fieldtype": "Data", "label": "Merchant Key", "reqd": 1},
         {"fieldname": "merchant_salt", "fieldtype": "Password", "label": "Merchant Salt", "reqd": 1},
         {"fieldname": "is_sandbox", "fieldtype": "Check", "label": "Use Sandbox (Test Mode)", "default": "1"},

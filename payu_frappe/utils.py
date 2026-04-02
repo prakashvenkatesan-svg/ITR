@@ -10,6 +10,7 @@ def get_payu_settings():
     try:
         settings = frappe.get_single("PayU Settings")
         return {
+            "merchant_id": settings.merchant_id.strip() if settings.merchant_id else "",
             "key": settings.merchant_key.strip() if settings.merchant_key else "",
             "salt": settings.merchant_salt.strip() if settings.merchant_salt else "",
             "is_sandbox": settings.is_sandbox,

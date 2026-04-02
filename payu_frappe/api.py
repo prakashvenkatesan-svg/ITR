@@ -427,6 +427,7 @@ def get_checkout_details(request_id):
     amount = f"{amt_val:.2f}"
 
     params = {
+        "merchant_id": str(settings.get("merchant_id", "")).strip(),
         "key": str(settings["key"]).strip(),
         "txnid": txnid,
         "amount": amount,
