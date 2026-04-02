@@ -287,11 +287,19 @@ def get_picky_assist_templates():
 
 @frappe.whitelist(allow_guest=True)
 def get_whatsapp_history(itr_submission):
-    """Fetch history for the chat UI, ensuring all fields are correctly formatted."""
+    """Fetch history for the chat UI, ensuring all messages for the mobile number are included."""
+    # First, get the mobile number for this submission
+    mobile = frappe.db.get_value("ITR Filing Submission", itr_submission, "mobile_number")
+    if not mobile:
+        return []
+
+    # Clean the number to last 10 digits for better matching
+    clean_mobile = str(mobile).strip().replace("+", "")[-10:]
+
     return frappe.get_all(
         "Picky Assist Message",
-        filters={"itr_submission": itr_submission},
-        fields=["direction", "message", "creation", "media_url", "mobile_number"],
+        filters={"mobile_number": ["like", f"%{clean_mobile}"]},
+        fields=["direction", "message", "creation", "media_url", "mobile_number", "itr_submission"],
         order_by="creation asc"
     )
 
@@ -313,9 +321,15 @@ def handle_whatsapp_webhook():
     if not sender_number or not content:
         return {"status": "Handled", "error": "Incomplete payload"}
 
-    # Find the matching client by mobile number
-    # We look for exact match or suffix match to handle country code variations
-    client = frappe.db.get_value("ITR Filing Submission", {"mobile_number": ["like", f"%{sender_number[-10:]}"]}, ["name", "regional_manager"], as_dict=1)
+    # Find the matching client by mobile number (pick the latest submission)
+    client_name = frappe.db.get_value(
+        "ITR Filing Submission", 
+        {"mobile_number": ["like", f"%{sender_number[-10:]}"]}, 
+        "name", 
+        order_by="creation desc"
+    )
+    
+    regional_manager = frappe.db.get_value("ITR Filing Submission", client_name, "regional_manager") if client_name else None
 
     # Log the incoming message
     msg_doc = frappe.get_doc({
@@ -323,19 +337,20 @@ def handle_whatsapp_webhook():
         "direction": "Inbound",
         "mobile_number": sender_number,
         "message": content,
-        "itr_submission": client.name if client else None,
-        "regional_manager": client.regional_manager if client else None,
+        "itr_submission": client_name,
+        "regional_manager": regional_manager,
         "picky_assist_id": data.get("unique-id")
     })
     msg_doc.insert(ignore_permissions=True)
     frappe.db.commit()
 
-    # Trigger a notification for the RM if the client is matched
-    if client and client.regional_manager:
-        frappe.publish_realtime("whatsapp_notification", {
-            "message": f"New WhatsApp from {client.name}",
-            "rm": client.regional_manager
-        }, user=client.regional_manager)
+    # Trigger a real-time update
+    frappe.publish_realtime("whatsapp_notification", {
+        "message": content,
+        "itr_submission": client_name,
+        "mobile_number": sender_number,
+        "rm": regional_manager
+    }, user=regional_manager)
 
     return {"status": "Success", "id": msg_doc.name}
 
@@ -417,10 +432,10 @@ def get_checkout_details(request_id):
     settings = get_payu_settings()
 
     # Format txnid tightly to avoid PayU's 25-character max-length limit
-    # e.g. ITR-SUB-00019 (13 chars) + '-' + 2603281045 (10 chars) = 24 chars
-    # shortened to 8 chars to avoid 25-char limit
-    time_str = frappe.utils.now_datetime().strftime('%y%m%d%S')
-    txnid = f"{doc.name}-{time_str}"
+    # Safer txnid: max 21-23 chars (PayU limit is 25)
+    time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M%S') 
+    short_name = doc.name.replace("-", "")[-8:] 
+    txnid = f"{short_name}-{time_str}"
     
     # Amount with exactly 2 decimal places
     amt_val = float(doc.service_amount or 0)
@@ -481,10 +496,6 @@ def handle_callback():
     txnid = data.get("txnid", "")
     request_ref = data.get("udf1", "")
 
-    if not request_ref and txnid.startswith("ITR-SUB-"):
-        parts = txnid.split('-')
-        if len(parts) >= 3:
-            request_ref = f"{parts[0]}-{parts[1]}-{parts[2]}"
 
     payment_status = "Success" if data.get("status") == "success" else "Failed"
 
