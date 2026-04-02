@@ -8,6 +8,8 @@ def get_payu_settings():
     Falls back to site_config if the DocType is not available yet.
     """
     try:
+        # Clear cache to ensure we get the latest saved credentials
+        frappe.cache().delete_value("payu_settings")
         settings = frappe.get_single("PayU Settings")
         return {
             "merchant_id": settings.merchant_id.strip() if settings.merchant_id else "",
@@ -30,7 +32,8 @@ def generate_payu_hash(params: dict, salt: str) -> str:
     PayU hash formula (SHA-512):
     key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     """
-    # PayU hosted checkout formula: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
+    # PayU hosted checkout formula (exactly 16 pipes):
+    # key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     hash_fields = [
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
@@ -49,7 +52,7 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         str(params.get("udf9", "")).strip(),
         str(params.get("udf10", "")).strip(),
     ]
-    hash_str = "|".join(hash_fields) + "|" + salt
+    hash_str = "|".join(hash_fields) + "|" + salt.strip()
     
     try:
         frappe.log_error("Raw PayU Hash String", f"String: '{hash_str}'\nParams: {params}")
