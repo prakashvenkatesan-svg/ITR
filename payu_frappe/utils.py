@@ -30,9 +30,9 @@ def get_payu_settings():
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
     PayU hash formula (exactly 16 pipes):
-    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
+    key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT
     """
-    hash_str = "|".join([
+    hash_fields = [
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
         str(params.get("amount", "")).strip(),
@@ -40,13 +40,13 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         str(params.get("firstname", "")).strip(),
         str(params.get("email", "")).strip(),
         str(params.get("udf1", "")).strip(),
-        str(params.get("udf2", "")).strip(),
-        str(params.get("udf3", "")).strip(),
-        str(params.get("udf4", "")).strip(),
-        str(params.get("udf5", "")).strip(),
-    ]) + "||||||" + salt.strip()
+        "", "", "", "", "", "", "", "", ""  # udf2 -> udf10
+    ]
+    
+    # join gives 15 pipes, + "|" + salt gives the 16th pipe
+    hash_str = "|".join(hash_fields) + "|" + salt.strip()
 
-    frappe.log_error("Correct PayU Hash String", hash_str)
+    frappe.log_error("FINAL CORRECT HASH STRING", hash_str)
 
     return hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
