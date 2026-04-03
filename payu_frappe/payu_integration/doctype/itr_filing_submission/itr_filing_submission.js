@@ -233,10 +233,10 @@ function open_whatsapp_dialog(frm) {
     // Real-time
     frappe.realtime.on('whatsapp_notification', (data) => {
         // Refresh only if message is for THIS customer (matched by last 10 digits)
-        const cur_mobile = (frm.doc.mobile_number || "").replace(/\D/g, "").slice(-10);
-        const incoming_mobile = (data.mobile_number || "").replace(/\D/g, "").slice(-10);
+        const cur_mobile = (frm.doc.mobile_number || "").toString().replace(/\D/g, "").slice(-10);
+        const incoming_mobile = (data.mobile_number || "").toString().replace(/\D/g, "").slice(-10);
         
-        if (incoming_mobile === cur_mobile && $body && $body.length > 0) {
+        if (cur_mobile && incoming_mobile === cur_mobile && $body && $body.length > 0) {
             fetch_wa_history(frm, $body, true);
         }
     });
