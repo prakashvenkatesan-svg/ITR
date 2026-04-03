@@ -1,6 +1,6 @@
 import frappe
 from frappe.utils import get_url
-from payu_frappe.utils import get_payu_settings, generate_payu_hash, verify_payu_hash
+from payu_frappe.utils import get_payu_settings, generate_payu_hash, verify_payu_hash, clean_mobile_number
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +61,8 @@ def submit_itr_details():
             data.get("fullName") or data.get("full_name") or data.get("name")
         )
         doc.email = (
-            data.get("email") or data.get("email_id") or 
-            data.get("emailId") or data.get("Email")
+            str(data.get("email") or data.get("email_id") or 
+            data.get("emailId") or data.get("Email") or "").strip()
         )
 
         ty = data.get("taxYear") or "2025-26"
@@ -72,8 +72,8 @@ def submit_itr_details():
         doc.annual_income = data.get("annualIncome")
 
         # --- Mobile ---
-        doc.mobile_number = data.get("mobileNumber") or data.get("mobile")
-        doc.country_code = data.get("country_code") or data.get("countryCode")
+        doc.mobile_number = str(data.get("mobileNumber") or data.get("mobile") or "").strip()
+        doc.country_code = str(data.get("country_code") or data.get("countryCode") or "").strip()
         doc.alt_whatsapp_number = (
             data.get("altMobileNumber") or data.get("alt_mobile") or data.get("altWhatsappNumber")
         )
@@ -231,7 +231,12 @@ def submit_itr_details():
         try:
             from payu_frappe.utils import send_whatsapp_message
             welcome_msg = f"Hello {doc.full_name}, thank you for submitting your ITR details for {doc.tax_year}. Our team will review it shortly. Team Aionion Advisory."
-            send_whatsapp_message(doc.mobile_number, welcome_msg, itr_submission=doc.name)
+            send_whatsapp_message(
+                receiver_number=doc.mobile_number, 
+                message_text=welcome_msg, 
+                itr_submission=doc.name, 
+                country_code=doc.country_code
+            )
         except Exception as we:
             frappe.log_error(title="Auto WhatsApp Error", message=str(we))
 
@@ -269,7 +274,8 @@ def send_manual_whatsapp(docname, message=None, media_url=None, template_id=None
         regional_manager=doc.regional_manager or frappe.session.user,
         template_id=template_id,
         template_params=template_params,
-        buttons=buttons
+        buttons=buttons,
+        country_code=doc.country_code
     )
     return res
 
@@ -293,8 +299,8 @@ def get_whatsapp_history(itr_submission):
     if not mobile:
         return []
 
-    # Clean the number to last 10 digits for better matching
-    clean_mobile = str(mobile).strip().replace("+", "")[-10:]
+    # Clean the number to last 10 digits for robust matching
+    clean_mobile = clean_mobile_number(mobile)[-10:]
 
     return frappe.get_all(
         "Picky Assist Message",
@@ -321,10 +327,11 @@ def handle_whatsapp_webhook():
     if not sender_number or not content:
         return {"status": "Handled", "error": "Incomplete payload"}
 
-    # Find the matching client by mobile number (pick the latest submission)
+    # Find the matching client by mobile number (standardized check)
+    search_num = clean_mobile_number(sender_number)[-10:]
     client_name = frappe.db.get_value(
         "ITR Filing Submission", 
-        {"mobile_number": ["like", f"%{sender_number[-10:]}"]}, 
+        {"mobile_number": ["like", f"%{search_num}"]}, 
         "name", 
         order_by="creation desc"
     )
@@ -350,7 +357,7 @@ def handle_whatsapp_webhook():
         "message_type": msg_type,
         "status": "Received",
         "regional_manager": regional_manager,
-        "picky_assist_id": data.get("unique-id")
+        "picky_assist_id": data.get("unique-id") or data.get("id")
     })
     msg_doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -416,14 +423,23 @@ def generate_payment_link_and_send(request_id):
             recipients=[doc.email],
             subject=f"ITR Filing Payment Link - {doc.name}",
             message=email_body,
+            reference_doctype="ITR Filing Submission",
+            reference_name=doc.name,
             queue="short",
         )
         
-        # --- Send Payment Link via WhatsApp ---
+        # --- Send Payment Link via WhatsApp (Template Required for Outbound) ---
         try:
             from payu_frappe.utils import send_whatsapp_message
-            wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
-            send_whatsapp_message(doc.mobile_number, wa_msg, itr_submission=doc.name)
+            # Using Template to bypass 24-hour restriction (Error 802)
+            send_whatsapp_message(
+                receiver_number=doc.mobile_number, 
+                message_text=None, # Not used for templates
+                itr_submission=doc.name,
+                country_code=doc.country_code,
+                template_id="itr_payment_link",
+                template_params=[doc.full_name, str(doc.service_amount), payment_link]
+            )
         except Exception as we:
             frappe.log_error(title="Payment WA Error", message=str(we))
             
