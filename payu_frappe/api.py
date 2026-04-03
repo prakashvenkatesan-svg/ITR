@@ -431,13 +431,14 @@ def generate_payment_link_and_send(request_id):
         # --- Send Payment Link via WhatsApp (Template Required for Outbound) ---
         try:
             from payu_frappe.utils import send_whatsapp_message
-            # Using Template to bypass 24-hour restriction (Error 802)
+            # Using specific Template ID VX208528995 to bypass 24-hour restriction
+            wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
             send_whatsapp_message(
                 receiver_number=doc.mobile_number, 
-                message_text=None, # Not used for templates
+                message_text=wa_msg, # Fallback message
                 itr_submission=doc.name,
                 country_code=doc.country_code,
-                template_id="itr_payment_link",
+                template_id="VX208528995",
                 template_params=[doc.full_name, str(doc.service_amount), payment_link]
             )
         except Exception as we:
