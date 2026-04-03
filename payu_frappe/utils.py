@@ -148,8 +148,11 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not clean_number:
             return {"status": "Error", "error": "Invalid mobile number"}
 
-        # Core message data
-        message_data = { "number": clean_number }
+        # Core message data (always include 'message' as fallback)
+        message_data = { 
+            "number": clean_number,
+            "message": message_text or "ITR Filing Update"
+        }
 
         if template_id:
             # V4 Template Logic (requires template_id and template_message list)
@@ -163,8 +166,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             if media_header:
                 message_data["template_header"] = media_header
         else:
-            # Standard Text Message
-            message_data["message"] = message_text
+            # Standard Text Message logic already handled by default 'message' field
             if media_url:
                 message_data["media"] = media_url
 
