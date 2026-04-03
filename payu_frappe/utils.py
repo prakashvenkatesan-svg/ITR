@@ -103,7 +103,34 @@ def verify_payu_hash(data: dict, salt: str) -> bool:
     return computed.lower() == received_hash.lower()
 
 
-def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None, template_id=None, template_params=None, buttons=None, media_header=None):
+def clean_mobile_number(mobile, country_code=None):
+    """
+    Standardizes a mobile number to digits-only format.
+    If country_code is provided, it combines them correctly.
+    Otherwise, it defaults to 91 for 10-digit numbers.
+    """
+    if not mobile:
+        return ""
+    
+    # 1. Clean both parts (digits only)
+    clean_mobile = "".join(filter(str.isdigit, str(mobile)))
+    clean_cc = "".join(filter(str.isdigit, str(country_code))) if country_code else ""
+    
+    # 2. If we have a country code, ensure it's at the start
+    if clean_cc:
+        # If the mobile already starts with the country code, don't double it
+        if clean_mobile.startswith(clean_cc):
+            return clean_mobile
+        return clean_cc + clean_mobile
+    
+    # 3. Fallback: If no country code and it's 10 digits, assume 91 (India)
+    if len(clean_mobile) == 10:
+        return "91" + clean_mobile
+    
+    return clean_mobile
+
+
+def send_whatsapp_message(receiver_number, message_text, itr_submission=None, regional_manager=None, media_url=None, template_id=None, template_params=None, buttons=None, media_header=None, country_code=None):
     """
     Sends a WhatsApp message via Picky Assist Push API (V2/V4).
     Supports Text, Media, Templates, and Interactive Buttons.
@@ -116,33 +143,31 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not settings.is_enabled:
             return {"status": "Disabled", "error": "WhatsApp integration is disabled in settings."}
 
-        # Clear number: remove +, spaces, etc.
-        clean_number = "".join(filter(str.isdigit, str(receiver_number)))
-        if not clean_number.startswith("91") and len(clean_number) == 10:
-            clean_number = "91" + clean_number
+        # Clear number using standardized utility
+        clean_number = clean_mobile_number(receiver_number, country_code)
+        if not clean_number:
+            return {"status": "Error", "error": "Invalid mobile number"}
 
         # Core message data
         message_data = { "number": clean_number }
 
         if template_id:
-            # V4 Template Logic
-            # template_params should be a list of strings for {{1}}, {{2}}...
+            # V4 Template Logic (requires template_id and template_message list)
+            message_data["template_id"] = template_id
             message_data["template_message"] = template_params or []
             message_data["language"] = "en"
-        else:
-            # Standard Text
-            message_data["message"] = message_text
-
-        if template_id:
-            message_data["template_id"] = template_id
-            if template_params:
-                message_data["template_message"] = template_params
-
-        if media_url:
-            message_data["media"] = media_url
+            
+            # If media for a template is provided, it goes into 'media'
+            if media_url:
+                message_data["media"] = media_url
             if media_header:
                 message_data["template_header"] = media_header
-        
+        else:
+            # Standard Text Message
+            message_data["message"] = message_text
+            if media_url:
+                message_data["media"] = media_url
+
         if buttons:
             # V4 Interactive Buttons (payload)
             message_data["payload"] = buttons
@@ -167,8 +192,9 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if itr_submission:
             client_data = frappe.db.get_value("ITR Filing Submission", itr_submission, ["full_name", "email"], as_dict=1)
             
-            # Find existing contact by mobile or email
-            contact_name = frappe.db.get_value("Contact", {"mobile_no": ["like", f"%{clean_number[-10:]}"]}, "name")
+            # Find existing contact by mobile or email (match last 10 digits for robustness)
+            search_num = clean_number[-10:]
+            contact_name = frappe.db.get_value("Contact", {"mobile_no": ["like", f"%{search_num}"]}, "name")
             if not contact_name and client_data and client_data.email:
                 contact_name = frappe.db.get_value("Contact", {"email_id": client_data.email}, "name")
             
@@ -195,6 +221,12 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         # Handle case-insensitive status from Picky Assist
         api_status = str(res_data.get("status", "")).lower()
         final_status = "Sent" if api_status == "success" else "Failed"
+
+        if api_status != "success":
+            frappe.log_error(
+                title="Picky Assist API Failure",
+                message=f"Payload: {json.dumps(payload, indent=2)}\n\nResponse: {json.dumps(res_data, indent=2)}"
+            )
 
         log_doc = frappe.get_doc({
             "doctype": "Picky Assist Message",
