@@ -248,7 +248,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
             "message_type": msg_type,
             "status": final_status,
             "regional_manager": regional_manager or frappe.session.user,
-            "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if api_status == "success" else ""
+            "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if is_success else ""
         })
         log_doc.insert(ignore_permissions=True)
         frappe.db.commit()
