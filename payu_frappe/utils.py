@@ -223,11 +223,15 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         elif media_url:
             msg_type = "Media"
 
-        # Handle case-insensitive status from Picky Assist
-        api_status = str(res_data.get("status", "")).lower()
-        final_status = "Sent" if api_status == "success" else "Failed"
+        # Handle status from Picky Assist (v2/v4 uses 100 or "Success")
+        raw_status = res_data.get("status")
+        raw_message = str(res_data.get("message", "")).lower()
+        
+        # Consider success if status is 100 or message is "success"
+        is_success = (raw_status == 100 or raw_status == "100" or raw_message == "success")
+        final_status = "Sent" if is_success else "Failed"
 
-        if api_status != "success":
+        if not is_success:
             frappe.log_error(
                 title="Picky Assist API Failure",
                 message=f"Payload: {json.dumps(payload, indent=2)}\n\nResponse: {json.dumps(res_data, indent=2)}"
