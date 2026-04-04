@@ -253,7 +253,7 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         log_doc.insert(ignore_permissions=True)
         frappe.db.commit()
 
-        if api_status == "success":
+        if is_success:
             return {"status": "Success", "data": res_data, "id": log_doc.name}
         else:
             error_msg = res_data.get("message") or res_data.get("status") or "Unknown Picky Assist Error"
