@@ -148,37 +148,40 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not clean_number:
             return {"status": "Error", "error": "Invalid mobile number"}
 
-        # Core message data (always include 'message' as fallback)
-        message_data = { 
-            "number": clean_number,
-            "message": message_text or "ITR Filing Update"
-        }
-
-        if template_id:
-            # V4 Template Logic (requires template_id and template_message list)
-            message_data["template_id"] = template_id
-            message_data["template_message"] = template_params or []
-            message_data["language"] = "en"
-            
-            # If media for a template is provided, it goes into 'media'
-            if media_url:
-                message_data["media"] = media_url
-            if media_header:
-                message_data["template_header"] = media_header
-        else:
-            # Standard Text Message logic already handled by default 'message' field
-            if media_url:
-                message_data["media"] = media_url
-
-        if buttons:
-            # V4 Interactive Buttons (payload)
-            message_data["payload"] = buttons
-
+        # Core payload structure for V4
         payload = {
             "token": settings.get_password("api_token"),
             "application": settings.application_id,
-            "data": [message_data]
         }
+
+        # Individual recipient data
+        recipient_data = { "number": clean_number }
+
+        if template_id:
+            # V4 Template Configuration belongs at the ROOT
+            payload["template_id"] = template_id
+            payload["language"] = "en"
+            
+            # Placeholders go into 'template_message' inside 'data'
+            recipient_data["template_message"] = template_params or []
+            
+            # If media/buttons for a template is provided
+            if media_url:
+                recipient_data["media"] = media_url
+            if media_header:
+                recipient_data["template_header"] = media_header
+        else:
+            # Standard Text Message
+            recipient_data["message"] = message_text or "ITR Filing Update"
+            if media_url:
+                recipient_data["media"] = media_url
+
+        if buttons:
+            # V4 Interactive Buttons
+            recipient_data["payload"] = buttons
+
+        # Wrap in 'data' array as required by V4 Push API
+        payload["data"] = [recipient_data]
 
         url = "https://app.pickyassist.com/api/v2/push"
         response = requests.post(url, json=payload, timeout=15)
