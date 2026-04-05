@@ -449,25 +449,25 @@ def generate_payment_link_and_send(request_id):
             reference_name=doc.name,
             queue="short",
         )
-        
-        # --- Send Payment Link via WhatsApp (Template Required for Outbound) ---
-        try:
-            from payu_frappe.utils import send_whatsapp_message
-            # Using specific Template ID VX208528995 to bypass 24-hour restriction
-            wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
-            send_whatsapp_message(
-                receiver_number=doc.mobile_number, 
-                message_text=wa_msg, # Fallback message
-                itr_submission=doc.name,
-                country_code=doc.country_code,
-                template_id="VX208528995",
-                template_params=[doc.full_name, str(doc.service_amount), payment_link, "Picky Assist", "Aionion"]
-            )
-        except Exception as we:
-            frappe.log_error(title="Payment WA Error", message=str(we))
-            
     except Exception:
         frappe.log_error("Email enqueue failed", "PayU Email Error")
+
+    # --- Send Payment Link via WhatsApp (independent of email) ---
+    # Template VX208528995 has exactly 3 placeholders: {{1}}=Name, {{2}}=Amount, {{3}}=Link
+    try:
+        from payu_frappe.utils import send_whatsapp_message
+        wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
+        send_whatsapp_message(
+            receiver_number=doc.mobile_number,
+            message_text=wa_msg,
+            itr_submission=doc.name,
+            country_code=doc.country_code,
+            regional_manager=doc.regional_manager or frappe.session.user,
+            template_id="VX208528995",
+            template_params=[doc.full_name, str(doc.service_amount), payment_link]
+        )
+    except Exception as we:
+        frappe.log_error(title="Payment WA Error", message=str(we))
 
     return {"payment_link": payment_link, "status": "Link Generated"}
 
