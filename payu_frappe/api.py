@@ -182,7 +182,19 @@ def submit_itr_details():
         doc.service_amount = data.get("serviceAmount") or data.get("service_amount")
 
         doc.flags.ignore_mandatory = True
+        # Suppress auto-assignment during insert to avoid PermissionError on Guest submissions.
+        # The Assignment Rule tries to 'share' the doc, which Frappe blocks for Guests.
+        doc.flags.ignore_auto_assignment = True
         doc.insert(ignore_permissions=True)
+        # After insert, trigger assignment as Administrator to avoid permission issues
+        try:
+            frappe.set_user("Administrator")
+            from frappe.automation.doctype.assignment_rule.assignment_rule import apply as apply_assignment
+            apply_assignment(doc, "after_insert")
+        except Exception:
+            pass  # Assignment failure should not block the submission
+        finally:
+            frappe.set_user("Guest")
 
         # --- Process Physical File Attachments ---
         files_attached = []
@@ -227,15 +239,19 @@ def submit_itr_details():
             message=f"Created: {doc.name}\nFiles Saved: {', '.join(files_attached) if files_attached else 'None'}"
         )
 
-        # --- Automated WhatsApp Confirmation ---
+        # --- Automated WhatsApp Confirmation (Template required to reach new users) ---
         try:
             from payu_frappe.utils import send_whatsapp_message
-            welcome_msg = f"Hello {doc.full_name}, thank you for submitting your ITR details for {doc.tax_year}. Our team will review it shortly. Team Aionion Advisory."
+            # Use the approved template to bypass 24-hour restriction for new users
+            # Template VX208528995 expects: [name, amount, link]
             send_whatsapp_message(
                 receiver_number=doc.mobile_number, 
-                message_text=welcome_msg, 
+                message_text=f"Hello {doc.full_name}, thank you for submitting your ITR details.", 
                 itr_submission=doc.name, 
-                country_code=doc.country_code
+                country_code=doc.country_code,
+                regional_manager=doc.regional_manager or "Administrator",
+                template_id="VX208528995",
+                template_params=[doc.full_name, str(doc.service_amount or "TBD"), "https://aionionadvisory.com"]
             )
         except Exception as we:
             frappe.log_error(title="Auto WhatsApp Error", message=str(we))
