@@ -248,16 +248,15 @@ def submit_itr_details():
         # --- Automated WhatsApp Confirmation (Template required to reach new users) ---
         try:
             from payu_frappe.utils import send_whatsapp_message
-            # Use the approved template to bypass 24-hour restriction for new users
-            # Template VX208528995 expects: [name, amount, link]
+            # Template VX208528995 expects 1 placeholder: {{1}} = link
             send_whatsapp_message(
                 receiver_number=doc.mobile_number, 
-                message_text=f"Hello {doc.full_name}, thank you for submitting your ITR details.", 
+                message_text=f"Please complete the payment by clicking followed by link https://aionionadvisory.com. Please contact us if you face any issues.", 
                 itr_submission=doc.name, 
                 country_code=doc.country_code,
                 regional_manager=doc.regional_manager or "Administrator",
                 template_id="VX208528995",
-                template_params=[doc.full_name, str(doc.service_amount or "TBD"), "https://aionionadvisory.com"]
+                template_params=["https://aionionadvisory.com"]
             )
         except Exception as we:
             frappe.log_error(title="Auto WhatsApp Error", message=str(we))
@@ -453,10 +452,10 @@ def generate_payment_link_and_send(request_id):
         frappe.log_error("Email enqueue failed", "PayU Email Error")
 
     # --- Send Payment Link via WhatsApp (independent of email) ---
-    # Template VX208528995 has exactly 3 placeholders: {{1}}=Name, {{2}}=Amount, {{3}}=Link
+    # Template VX208528995 has exactly 1 placeholder: {{1}} = payment link
     try:
         from payu_frappe.utils import send_whatsapp_message
-        wa_msg = f"Hello {doc.full_name}, your ITR payment link of \u20b9{doc.service_amount} is ready. Click here to pay: {payment_link}"
+        wa_msg = f"Please complete the payment by clicking followed by link {payment_link}. Please contact us if you face any issues."
         send_whatsapp_message(
             receiver_number=doc.mobile_number,
             message_text=wa_msg,
@@ -464,7 +463,7 @@ def generate_payment_link_and_send(request_id):
             country_code=doc.country_code,
             regional_manager=doc.regional_manager or frappe.session.user,
             template_id="VX208528995",
-            template_params=[doc.full_name, str(doc.service_amount), payment_link]
+            template_params=[payment_link]
         )
     except Exception as we:
         frappe.log_error(title="Payment WA Error", message=str(we))
