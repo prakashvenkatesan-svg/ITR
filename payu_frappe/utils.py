@@ -29,13 +29,15 @@ def get_payu_settings():
 
 def generate_payu_hash(params: dict, salt: str) -> str:
     """
-    PayU Outbound Hash Formula (Exactly 16 pipes):
-    sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|SALT)
+    PayU Outbound Hash Formula (Exactly 11 pipes / 12 segments):
+    sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|SALT)
+    
+    IMPORTANT: PayU only uses udf1-udf5 in the hash, NOT udf6-udf10.
     """
     # CRITICAL: Always format amount to 2 decimal places
     amount_str = "{:.2f}".format(float(params.get("amount", 0)))
     
-    # Build segments strictly according to official sequence
+    # Build segments strictly according to official PayU formula (12 segments, 11 pipes)
     segments = [
         str(params.get("key", "")).strip(),
         str(params.get("txnid", "")).strip(),
@@ -48,11 +50,6 @@ def generate_payu_hash(params: dict, salt: str) -> str:
         str(params.get("udf3", "")).strip(),
         str(params.get("udf4", "")).strip(),
         str(params.get("udf5", "")).strip(),
-        str(params.get("udf6", "")).strip(),
-        str(params.get("udf7", "")).strip(),
-        str(params.get("udf8", "")).strip(),
-        str(params.get("udf9", "")).strip(),
-        str(params.get("udf10", "")).strip(),
         salt.strip()
     ]
     
@@ -62,8 +59,9 @@ def generate_payu_hash(params: dict, salt: str) -> str:
 
 def verify_payu_hash(data: dict, salt: str) -> bool:
     """
-    PayU Inbound (Reverse) Hash Formula (Exactly 17 pipes):
-    sha512(SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+    PayU Inbound (Reverse) Hash Formula:
+    sha512(SALT|status|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+    Only udf1-udf5 are used (reverse order), matching the outbound formula.
     """
     received_hash = data.get("hash", "")
     additional_charges = data.get("additionalCharges")
@@ -71,15 +69,10 @@ def verify_payu_hash(data: dict, salt: str) -> bool:
     # Amount must match exactly what PayU sends back
     amount_str = "{:.2f}".format(float(data.get("amount", 0)))
 
-    # Official Reverse Sequence: SALT comes first, then status, then UDFs in reverse order
+    # Official Reverse Sequence: SALT, status, udf5→udf1 (reverse), email, firstname, productinfo, amount, txnid, key
     reverse_segments = [
         salt.strip(),
         str(data.get("status", "")),
-        str(data.get("udf10", "") or ""),
-        str(data.get("udf9", "") or ""),
-        str(data.get("udf8", "") or ""),
-        str(data.get("udf7", "") or ""),
-        str(data.get("udf6", "") or ""),
         str(data.get("udf5", "") or ""),
         str(data.get("udf4", "") or ""),
         str(data.get("udf3", "") or ""),
