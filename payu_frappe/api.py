@@ -182,17 +182,23 @@ def submit_itr_details():
         doc.service_amount = data.get("serviceAmount") or data.get("service_amount")
 
         doc.flags.ignore_mandatory = True
-        # Suppress auto-assignment during insert to avoid PermissionError on Guest submissions.
-        # The Assignment Rule tries to 'share' the doc, which Frappe blocks for Guests.
-        doc.flags.ignore_auto_assignment = True
-        doc.insert(ignore_permissions=True)
-        # After insert, trigger assignment as Administrator to avoid permission issues
+        # Use frappe.flags.in_import to suppress the Assignment Rule automation.
+        # This is the correct Frappe mechanism — the assignment rule checks this flag
+        # and skips execution. Without this, Guest submissions crash because the rule
+        # tries to 'share' the doc which Frappe blocks for Guest users.
+        frappe.flags.in_import = True
+        try:
+            doc.insert(ignore_permissions=True)
+        finally:
+            frappe.flags.in_import = False
+
+        # Trigger assignment as Administrator AFTER insert succeeds (no crash risk)
         try:
             frappe.set_user("Administrator")
             from frappe.automation.doctype.assignment_rule.assignment_rule import apply as apply_assignment
             apply_assignment(doc, "after_insert")
         except Exception:
-            pass  # Assignment failure should not block the submission
+            pass  # Assignment failure must never block the submission
         finally:
             frappe.set_user("Guest")
 

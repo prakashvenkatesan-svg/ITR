@@ -148,19 +148,21 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         if not clean_number:
             return {"status": "Error", "error": "Invalid mobile number"}
 
-        # Core payload structure for V4
+        # Core payload structure - application must be int per V4 spec
         payload = {
             "token": settings.get_password("api_token"),
-            "application": settings.application_id,
+            "application": int(settings.application_id),
         }
 
         # Individual recipient data
         recipient_data = { "number": clean_number }
 
         if template_id:
-            # V4 Template Configuration belongs at the ROOT
+            # V4 Template: template_id at ROOT
             payload["template_id"] = template_id
-            payload["language"] = "en"
+            
+            # 'language' goes INSIDE the data object (per recipient), NOT at root
+            recipient_data["language"] = "en"
             
             # Placeholders go into 'template_message' inside 'data'
             recipient_data["template_message"] = template_params or []
@@ -184,8 +186,21 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
         payload["data"] = [recipient_data]
 
         url = "https://app.pickyassist.com/api/v2/push"
+        
+        # Debug: log the exact payload being sent
+        frappe.log_error(
+            title="WA Debug Payload",
+            message=f"URL: {url}\nPayload: {json.dumps(payload, indent=2)}"
+        )
+        
         response = requests.post(url, json=payload, timeout=15)
         res_data = response.json()
+        
+        # Debug: log the full response
+        frappe.log_error(
+            title="WA Debug Response",
+            message=f"Status Code: {response.status_code}\nResponse: {json.dumps(res_data, indent=2)}"
+        )
 
         # Log the message
         log_content = message_text
