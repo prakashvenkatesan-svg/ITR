@@ -439,7 +439,7 @@ def generate_payment_link_and_send(request_id):
                 itr_submission=doc.name,
                 country_code=doc.country_code,
                 template_id="VX208528995",
-                template_params=[doc.full_name, str(doc.service_amount), payment_link]
+                template_params=[doc.full_name, str(doc.service_amount), payment_link, "Picky Assist", "Aionion"]
             )
         except Exception as we:
             frappe.log_error(title="Payment WA Error", message=str(we))

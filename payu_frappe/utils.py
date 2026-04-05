@@ -237,18 +237,22 @@ def send_whatsapp_message(receiver_number, message_text, itr_submission=None, re
                 message=f"Payload: {json.dumps(payload, indent=2)}\n\nResponse: {json.dumps(res_data, indent=2)}"
             )
 
+        # Log to Picky Assist Message DocType
+        res_list = res_data.get("data", [])
+        pa_id = ""
+        if isinstance(res_list, list) and len(res_list) > 0:
+            pa_id = str(res_list[0].get("id", ""))
+
         log_doc = frappe.get_doc({
             "doctype": "Picky Assist Message",
             "direction": "Outbound",
             "mobile_number": clean_number,
-            "message": log_content,
-            "media_url": media_url,
-            "itr_submission": itr_submission,
-            "contact": contact,
-            "message_type": msg_type,
+            "message": message_text,
             "status": final_status,
+            "itr_submission": itr_submission,
+            "message_type": "Template" if template_id else "Text",
             "regional_manager": regional_manager or frappe.session.user,
-            "picky_assist_id": str(res_data.get("data", [{}])[0].get("id", "")) if is_success else ""
+            "picky_assist_id": pa_id
         })
         log_doc.insert(ignore_permissions=True)
         frappe.db.commit()
