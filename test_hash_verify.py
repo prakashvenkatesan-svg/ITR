@@ -1,60 +1,31 @@
 import hashlib
 
-# CONFIRMED CREDENTIALS from PayU Dashboard
+# Values from CURRENT PayU error (ITR-SUB-00045, puneethi, 3000.00)
 key = 'Y4PFDw'
-salt = 'eKoE70FdIdqSFc0sgo0TouPKj68x9ee8'
-
-# Values from PayU error page (ITR-SUB-00021 transaction)
-txnid = 'SUB00021-260406120541'
-amount = '1000.00'
+txnid = 'SUB00045-260406130339'
+amount = '3000.00'
 productinfo = 'ITR'
-firstname = 'Ashwin kumar'
-email = 'ashiwnkumark59@gmail.com'
-udf1 = 'ITR-SUB-00021'
+firstname = 'puneethi'
+email = 'puneethi@gmail.com'
+udf1 = 'ITR-SUB-00045'
 
-# PayU's expected v1 hash from the error page  
-payu_expected = "8ac4175594cd97a5abe9c109f79ddee2424e9a70ce3ccf8995061e82defb4d29626d7f34449339bc8db0ccf13f7900689d7d7299e3a778a3ac08b48253535ad"
+# PayU expected hash from current error page
+payu_expected = "e45c9d6f42aec94da2634627dccb5c8f0a55125d799bea50606d2209ee5bc2e1290883637e8153686818d5c0f8f5e81b2b238cd72669ab4750994004ac342ac4"
 
-base = f'{key}|{txnid}|{amount}|{productinfo}|{firstname}|{email}|{udf1}'
+salt_I = 'eKoE70FdIdqSFc0sgo0TouPKj68x9ee8'  # capital I
+salt_l = 'eKoE70FdldqSFc0sgo0TouPKj68x9ee8'  # lowercase l
 
-print("=== Testing all pipe counts after udf1 ===")
-for pipes in range(6, 16):
-    segments = [key, txnid, amount, productinfo, firstname, email, udf1]
-    segments += [''] * (pipes - 6)  # add empty udf fields
-    segments.append(salt)
-    hash_str = '|'.join(segments)
-    h = hashlib.sha512(hash_str.encode('utf-8')).hexdigest()
-    match = '<<< MATCH!' if h.lower() == payu_expected.lower() else ''
-    total_pipes = len(segments) - 1
-    print(f"  {total_pipes} total pipes: {h[:30]}... {match}")
-
+print("Testing CURRENT transaction (ITR-SUB-00045, 3000.00):")
+print(f"PayU expected: {payu_expected[:30]}...")
 print()
-print(f"PayU expected:  {payu_expected[:30]}...")
 
-# Also try with alternate salt variants
-print("\n=== Testing salt variants (l vs I) ===")
-salt_variants = [
-    ('Original (capital I)', 'eKoE70FdIdqSFc0sgo0TouPKj68x9ee8'),
-    ('Lowercase l',          'eKoE70FdldqSFc0sgo0TouPKj68x9ee8'),
-]
-for label, s in salt_variants:
-    segments = [key, txnid, amount, productinfo, firstname, email, udf1, '', '', '', '', '', '', '', '', s]
-    h15 = hashlib.sha512('|'.join(segments[:16]).encode()).hexdigest()
-    segments2 = [key, txnid, amount, productinfo, firstname, email, udf1, '', '', '', '', '', '', '', s]
-    h14 = hashlib.sha512('|'.join(segments2[:15]).encode()).hexdigest()
-    match15 = '<<< MATCH (15p)!' if h15.lower() == payu_expected.lower() else ''
-    match14 = '<<< MATCH (14p)!' if h14.lower() == payu_expected.lower() else ''
-    print(f"  {label}: 15p={h15[:20]}...{match15}  14p={h14[:20]}...{match14}")
-
-# Try with amount without decimals
-print("\n=== Testing amount variants ===")
-for amt in ['1000', '1000.0', '1000.00']:
-    segments = [key, txnid, amt, productinfo, firstname, email, udf1, '', '', '', '', '', '', '', '', salt]
-    for total_pipes in [14, 15, 16]:
-        segs = [key, txnid, amt, productinfo, firstname, email, udf1]
-        segs += [''] * (total_pipes - 6)
-        segs.append(salt)
-        h = hashlib.sha512('|'.join(segs).encode()).hexdigest()
-        match = '<<< MATCH!' if h.lower() == payu_expected.lower() else ''
-        if match:
-            print(f"  amount={amt}, pipes={total_pipes}: MATCH! {h[:30]}")
+for label, salt in [('Capital I', salt_I), ('Lowercase l', salt_l)]:
+    for total_pipes in [14, 15, 16, 17]:
+        empty_count = total_pipes - 6  # pipes after email = udf fields + salt
+        segments = [key, txnid, amount, productinfo, firstname, email, udf1]
+        segments += [''] * (empty_count - 1)  # udf2..udfN all empty
+        segments.append(salt)
+        h = hashlib.sha512('|'.join(segments).encode('utf-8')).hexdigest()
+        match = '  <<< MATCH!' if h.lower() == payu_expected.lower() else ''
+        print(f"  {label} + {total_pipes} pipes: {h[:30]}...{match}")
+    print()
