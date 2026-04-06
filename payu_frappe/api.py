@@ -624,3 +624,73 @@ def verify_payment_with_payu_api(txnid, settings):
     except Exception as e:
         frappe.log_error(f"PayU Verify API Error: {str(e)}", "PayU Integration")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Workload Assignment & Data Privacy Hooks
+# ---------------------------------------------------------------------------
+
+def auto_assign_regional_manager(doc, method):
+    """
+    Called `before_insert` to perform a Round Robin workload distribution.
+    Only executes if assignment_method is 'Auto Assign' and no user is provided.
+    """
+    if getattr(doc, "assignment_method", None) == "Auto Assign" and not getattr(doc, "regional_manager", None):
+        # Fetch all active users with the role 'ITR User'
+        itr_users = frappe.db.sql("""
+            select distinct parent from `tabHas Role`
+            where role='ITR User' and parenttype='User'
+        """, as_dict=True)
+
+        if not itr_users:
+            return
+
+        user_emails = []
+        for u in itr_users:
+            if frappe.db.get_value("User", u.parent, "enabled"):
+                user_emails.append(u.parent)
+
+        if not user_emails:
+            return
+
+        # Calculate current workload: submissions where regional_manager is the user
+        workload = {}
+        for u in user_emails:
+            count = frappe.db.count("ITR Filing Submission", {"regional_manager": u})
+            workload[u] = count
+
+        if workload:
+            # Pick user with the lowest count
+            selected_user = min(workload, key=workload.get)
+            doc.regional_manager = selected_user
+
+
+def get_permission_query_conditions(user):
+    """
+    Hook to dynamically restrict what rows an 'ITR User' can fetch from the database.
+    (This entirely replaces the basic 'Only If Creator' requirement by ensuring assigned users see the row).
+    """
+    if not user: 
+        user = frappe.session.user
+
+    # System Managers and Administrator bypass this rule.
+    if "System Manager" in frappe.get_roles(user) or user == "Administrator":
+        return ""
+
+    # Must be either the owner (creator) or explicitly assigned as regional_manager
+    return f"(`tabITR Filing Submission`.owner = '{user}' or `tabITR Filing Submission`.regional_manager = '{user}')"
+
+
+def has_custom_permission(doc, ptype, user):
+    """
+    Hook to dynamically check permission when loading a specific document form.
+    """
+    if "System Manager" in frappe.get_roles(user) or user == "Administrator":
+        return True
+
+    # Allow if user created it or is assigned
+    if doc.owner == user or doc.regional_manager == user:
+        return True
+
+    return False
+

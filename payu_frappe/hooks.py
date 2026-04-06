@@ -30,3 +30,23 @@ doctype_js = {
 doctype_list_js = {
     "ITR Filing Submission": "payu_integration/doctype/itr_filing_submission/itr_filing_submission_list.js"
 }
+
+# -------------------------------------------------------------------------
+# Document Events (Hooks)
+# -------------------------------------------------------------------------
+doc_events = {
+    "ITR Filing Submission": {
+        "before_insert": "payu_frappe.api.auto_assign_regional_manager"
+    }
+}
+
+# -------------------------------------------------------------------------
+# Custom Permissions (Stateless Privacy)
+# -------------------------------------------------------------------------
+permission_query_conditions = {
+    "ITR Filing Submission": "payu_frappe.api.get_permission_query_conditions"
+}
+
+has_permission = {
+    "ITR Filing Submission": "payu_frappe.api.has_custom_permission"
+}
