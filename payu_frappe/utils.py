@@ -15,6 +15,8 @@ def get_payu_settings():
             "merchant_id": settings.merchant_id.strip() if settings.merchant_id else "",
             "key": settings.merchant_key.strip() if settings.merchant_key else "",
             "salt": settings.merchant_salt.strip() if settings.merchant_salt else "",
+            "client_id": settings.client_id.strip() if settings.client_id else "",
+            "client_secret": settings.get_password("client_secret") if settings.client_secret else "",
             "is_sandbox": settings.is_sandbox,
         }
     except Exception:
@@ -23,8 +25,40 @@ def get_payu_settings():
         return {
             "key": conf.get("payu_merchant_key", "").strip() if conf.get("payu_merchant_key") else "",
             "salt": conf.get("payu_merchant_salt", "").strip() if conf.get("payu_merchant_salt") else "",
+            "client_id": conf.get("payu_client_id", "").strip() if conf.get("payu_client_id") else "",
+            "client_secret": conf.get("payu_client_secret", "").strip() if conf.get("payu_client_secret") else "",
             "is_sandbox": conf.get("payu_is_sandbox", 1),
         }
+
+
+def get_payu_access_token(settings):
+    """
+    Obtains the OAuth 2.0 access token using client_credentials grant.
+    """
+    import requests
+    
+    url = "https://uat-accounts.payu.in/oauth/token-1" if settings.get("is_sandbox") else "https://accounts.payu.in/oauth/token-1"
+    
+    payload = {
+        "grant_type": "client_credentials",
+        "client_id": settings.get("client_id"),
+        "client_secret": settings.get("client_secret"),
+        "scope": "create_payment_links"
+    }
+    
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+    }
+    
+    try:
+        response = requests.post(url, data=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json().get("access_token")
+    except Exception as e:
+        frappe.log_error(f"PayU Token Error: {str(e)} | Details: {response.text if 'response' in locals() else ''}", "PayU API")
+        raise
+
 
 
 def generate_payu_hash(params: dict, salt: str) -> str:

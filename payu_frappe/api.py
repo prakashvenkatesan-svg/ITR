@@ -409,8 +409,11 @@ def submit_client_requirements():
 def generate_payment_link_and_send(request_id):
     """
     Called from ITR Filing Submission form button.
-    Generates a PayU checkout link and e-mails it to the client.
+    Generates a PayU payment link via OAuth REST API and e-mails it to the client.
     """
+    import requests
+    from payu_frappe.utils import get_payu_settings, get_payu_access_token
+
     doc = frappe.get_doc("ITR Filing Submission", request_id)
 
     if not doc.service_amount:
@@ -419,11 +422,70 @@ def generate_payment_link_and_send(request_id):
     if not doc.email:
         frappe.throw("Client Email is missing. Please provide an email address to send the link.")
 
-    # payment_amount will be auto-synced by doc.save() -> doc.validate()
-    payment_link = get_url(f"/payu_checkout?request={doc.name}")
+    settings = get_payu_settings()
+    
+    try:
+        # Get OAuth Token
+        access_token = get_payu_access_token(settings)
+    except Exception as e:
+        frappe.throw(f"Failed to authenticate with PayU: {str(e)}")
 
+    # Format txnid tightly to avoid PayU's 25-character max-length limit
+    time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M%S') 
+    short_name = doc.name.replace("-", "")[-8:] 
+    txnid = f"{short_name}-{time_str}"
+
+    url = "https://uatoneapi.payu.in/payment-links" if settings.get("is_sandbox") else "https://oneapi.payu.in/payment-links"
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    amt_val = float(doc.service_amount or 0)
+    
+    callback_base = get_url("/api/method/payu_frappe.api.handle_callback")
+    # Append txnid to callback so we can verify the actual payment status
+    success_callback = f"{callback_base}?request_ref={doc.name}&txnid={txnid}&status=success"
+    failure_callback = f"{callback_base}?request_ref={doc.name}&txnid={txnid}&status=failure"
+    
+    payload = {
+        "amount": amt_val,
+        "currency": "INR",
+        "description": "ITR Filing Service",
+        "referenceId": txnid,
+        "customerName": str(doc.full_name or "Client").strip()[:30],
+        "customerEmail": str(doc.email).strip(),
+        "customerMobile": str(doc.mobile_number or "9999999999").strip(),
+        "sendEmail": 0,
+        "sendSms": 0,
+        "successUrl": success_callback,
+        "failureUrl": failure_callback
+    }
+    
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=15)
+        res.raise_for_status()
+        res_data = res.json()
+    except Exception as e:
+        frappe.log_error(f"PayU Link Generation Error: {str(e)} | Details: {res.text if 'res' in locals() else ''}", "PayU API")
+        frappe.throw("Failed to generate payment link with PayU.")
+
+    payment_link = ""
+    # Usually in the response root or under `body`
+    if "shortUrl" in res_data:
+        payment_link = res_data["shortUrl"]
+    elif "url" in res_data:
+        payment_link = res_data["url"]
+    elif "body" in res_data and isinstance(res_data["body"], dict):
+        payment_link = res_data["body"].get("shortUrl") or res_data["body"].get("url")
+
+    # Wait for the case where it returns success directly mapping under "data" etc
     if not payment_link:
-        frappe.throw("Failed to generate base URL for payment link.")
+        match_keys = str(res_data)
+        if "http" in match_keys:
+            frappe.log_error(f"PayU response doesn't have shortUrl but might have other keys: {match_keys}", "PayU API Webhook")
+        frappe.throw("PayU API succeeded but could not read the shortUrl from response. Check Error Logs.")
 
     doc.payment_link = payment_link
     doc.payment_status = "Link Generated"
@@ -452,7 +514,6 @@ def generate_payment_link_and_send(request_id):
         frappe.log_error("Email enqueue failed", "PayU Email Error")
 
     # --- Send Payment Link via WhatsApp (independent of email) ---
-    # Template VX208528995 has exactly 1 placeholder: {{1}} = payment link
     try:
         from payu_frappe.utils import send_whatsapp_message
         wa_msg = f"Please complete the payment by clicking followed by link {payment_link}. Please contact us if you face any issues."
@@ -471,82 +532,29 @@ def generate_payment_link_and_send(request_id):
     return {"payment_link": payment_link, "status": "Link Generated"}
 
 
-@frappe.whitelist(allow_guest=True)
-def get_checkout_details(request_id):
-    """
-    Called from the payu_checkout web page JS.
-    Returns all PayU form params including the secure hash.
-    """
-    doc = frappe.get_doc("ITR Filing Submission", request_id)
-    settings = get_payu_settings()
-
-    # Format txnid tightly to avoid PayU's 25-character max-length limit
-    # Safer txnid: max 21-23 chars (PayU limit is 25)
-    time_str = frappe.utils.now_datetime().strftime('%y%m%d%H%M%S') 
-    short_name = doc.name.replace("-", "")[-8:] 
-    txnid = f"{short_name}-{time_str}"
-    
-    # Amount with exactly 2 decimal places
-    amt_val = float(doc.service_amount or 0)
-    amount = f"{amt_val:.2f}"
-
-    params = {
-        "merchant_id": str(settings.get("merchant_id", "")).strip(),
-        "key": str(settings["key"]).strip(),
-        "txnid": txnid,
-        "amount": amount,
-        "productinfo": "ITR",
-        "firstname": str(doc.full_name or "Client").strip()[:30],
-        "email": str(doc.email or "test@example.com").strip(),
-        "phone": str(doc.mobile_number or "9999999999").strip(),
-        "surl": get_url("/api/method/payu_frappe.api.handle_callback"),
-        "furl": get_url("/api/method/payu_frappe.api.handle_callback"),
-        "service_provider": "payu_paisa",
-        "udf1": doc.name,
-        "udf2": "",
-        "udf3": "",
-        "udf4": "",
-        "udf5": "",
-        "udf6": "",
-        "udf7": "",
-        "udf8": "",
-        "udf9": "",
-        "udf10": "",
-    }
-
-    params["hash"] = generate_payu_hash(params, settings["salt"])
-
-    return {
-        "params": params,
-        "url": (
-            "https://test.payu.in/_payment"
-            if settings["is_sandbox"]
-            else "https://secure.payu.in/_payment"
-        ),
-    }
-
 
 @frappe.whitelist(allow_guest=True)
 def handle_callback():
     """
-    PayU posts payment result here (both success & failure).
-    Verifies hash, logs transaction, and optionally verifies with PayU API.
+    PayU posts payment result here (or redirects here for Payment Links).
+    Always hits server-to-server API to verify ground truth securely.
     """
     data = frappe.form_dict
     settings = get_payu_settings()
 
-    # 1. Standard Hash Verification
-    hash_valid = verify_payu_hash(data, settings["salt"])
-    
-    # 2. Server-side API Verification (Mandatory Security Check)
+    # The redirect URL might contain txnid and request_ref
+    # e.g., ?request_ref=...&txnid=...&status=success
+    txnid = data.get("txnid") or data.get("mihpayid")
+    request_ref = data.get("request_ref") or data.get("udf1")
+
     api_verified = False
-    txnid = data.get("txnid", "")
-    request_ref = data.get("udf1", "")
     
     if txnid:
+        # Ground Truth check via Server to Server API (this works for both link and checkout IDs)
         api_status = verify_payment_with_payu_api(txnid, settings)
-        if api_status and api_status.get("status") == "success":
+        if api_status and api_status.get("status") == 1:
             txn_details = api_status.get("transaction_details", {}).get(txnid, {})
+            # PayU might return "status": "success" or "transaction_status": "success"
             if txn_details.get("status") == "success":
                 api_verified = True
 
@@ -560,7 +568,7 @@ def handle_callback():
             "client_mobile": data.get("phone", ""),
             "client_email": data.get("email", ""),
             "amount": data.get("amount"),
-            "status": "Success" if (hash_valid and api_verified and data.get("status") == "success") else "Failed",
+            "status": "Success" if api_verified else "Failed",
             "payment_method": data.get("mode", ""),
             "upi_id": data.get("bank_ref_num", data.get("mihpayid", "")),
             "response_data": frappe.as_json(dict(data)),
@@ -571,8 +579,8 @@ def handle_callback():
     except Exception as e:
         frappe.log_error(f"PayU Log Error: {str(e)}", "PayU Integration")
 
-    # Final Decision
-    if hash_valid and api_verified and data.get("status") == "success":
+    # Final Decision based strictly on Server API ground truth
+    if api_verified:
         if request_ref and frappe.db.exists("ITR Filing Submission", request_ref):
             req_doc = frappe.get_doc("ITR Filing Submission", request_ref)
             req_doc.payment_status = "Paid"
@@ -582,10 +590,7 @@ def handle_callback():
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-success"
     else:
-        # If hash is valid but API failed, log as potential security risk
-        if hash_valid and not api_verified and data.get("status") == "success":
-            frappe.log_error(f"Potential Fraud Attempt: Hash valid but API status failed for {txnid}", "PayU Security")
-
+        # If ground truth failed, go to failure.
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-failed"
 
@@ -685,6 +690,9 @@ def has_custom_permission(doc, ptype, user):
     """
     Hook to dynamically check permission when loading a specific document form.
     """
+    if not user:
+        user = frappe.session.user
+
     if "System Manager" in frappe.get_roles(user) or user == "Administrator":
         return True
 

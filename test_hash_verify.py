@@ -1,31 +1,32 @@
 import hashlib
 
-# Values from CURRENT PayU error (ITR-SUB-00045, puneethi, 3000.00)
 key = 'Y4PFDw'
-txnid = 'SUB00045-260406130339'
-amount = '3000.00'
+txnid = 'SUB00044-260406145238'
+amount = '2000.00'
 productinfo = 'ITR'
-firstname = 'puneethi'
-email = 'puneethi@gmail.com'
-udf1 = 'ITR-SUB-00045'
+firstname = 'dravid'
+email = 'prakashv7528@gmail.com'
+udf1 = 'ITR-SUB-00044'
+salt_I = 'eKoE70FdIdqSFc0sgo0TouPKj68x9ee8'
+salt_l = 'eKoE70FdldqSFc0sgo0TouPKj68x9ee8'
 
-# PayU expected hash from current error page
-payu_expected = "e45c9d6f42aec94da2634627dccb5c8f0a55125d799bea50606d2209ee5bc2e1290883637e8153686818d5c0f8f5e81b2b238cd72669ab4750994004ac342ac4"
+expected_hash = "620db59ac74d12e8b3124ae45e50e6177e30b5a7255f104ddfc3aede6a4b3ded7927a8a8d39c5b3404bca2d663edb28aa77921ca83e3967ac586e0b823b3d43"
+our_hash = "f0286fe2a4226146ed4aa454f67711fd489dc37cce12b9c23e035f1a7916b4e81153f7bd2a0a3fd6b948fec9aeb9b5daca74bbcfc365fc162318f984ee82aea"
 
-salt_I = 'eKoE70FdIdqSFc0sgo0TouPKj68x9ee8'  # capital I
-salt_l = 'eKoE70FdldqSFc0sgo0TouPKj68x9ee8'  # lowercase l
+print("Trying variations to find expected_hash and our_hash...")
 
-print("Testing CURRENT transaction (ITR-SUB-00045, 3000.00):")
-print(f"PayU expected: {payu_expected[:30]}...")
-print()
-
-for label, salt in [('Capital I', salt_I), ('Lowercase l', salt_l)]:
-    for total_pipes in [14, 15, 16, 17]:
-        empty_count = total_pipes - 6  # pipes after email = udf fields + salt
+for salt_name, salt in [('capital I', salt_I), ('lowercase l', salt_l)]:
+    for pipes in range(10, 20):
+        # Build segments
         segments = [key, txnid, amount, productinfo, firstname, email, udf1]
-        segments += [''] * (empty_count - 1)  # udf2..udfN all empty
+        empty_count = pipes - 6
+        segments.extend([""] * empty_count)
         segments.append(salt)
-        h = hashlib.sha512('|'.join(segments).encode('utf-8')).hexdigest()
-        match = '  <<< MATCH!' if h.lower() == payu_expected.lower() else ''
-        print(f"  {label} + {total_pipes} pipes: {h[:30]}...{match}")
-    print()
+        
+        hash_str = "|".join(segments)
+        h = hashlib.sha512(hash_str.encode('utf-8')).hexdigest()
+        
+        if h == expected_hash:
+            print(f"FOUND expected_hash! Salt: {salt_name}, Pipes: {pipes}, Hash Input: {hash_str}")
+        if h == our_hash:
+            print(f"FOUND our_hash! Salt: {salt_name}, Pipes: {pipes}, Hash Input: {hash_str}")

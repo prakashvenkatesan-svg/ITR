@@ -7,6 +7,8 @@
         "merchant_id",
         "merchant_key",
         "merchant_salt",
+        "client_id",
+        "client_secret",
         "is_sandbox",
         "sandbox_url",
         "production_url"
@@ -15,6 +17,8 @@
         {"fieldname": "merchant_id", "fieldtype": "Data", "label": "Merchant ID"},
         {"fieldname": "merchant_key", "fieldtype": "Data", "label": "Merchant Key", "reqd": 1},
         {"fieldname": "merchant_salt", "fieldtype": "Password", "label": "Merchant Salt", "reqd": 1},
+        {"fieldname": "client_id", "fieldtype": "Data", "label": "Client ID for OAuth"},
+        {"fieldname": "client_secret", "fieldtype": "Password", "label": "Client Secret for OAuth"},
         {"fieldname": "is_sandbox", "fieldtype": "Check", "label": "Use Sandbox (Test Mode)", "default": "1"},
         {"fieldname": "sandbox_url", "fieldtype": "Data", "label": "Sandbox URL",
             "default": "https://test.payu.in/_payment", "read_only": 1},
