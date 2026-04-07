@@ -23,6 +23,12 @@ def get_context(context):
 
     # Check if a link already exists. If not, auto-generate it securely.
     link = doc.payment_link
+    
+    # Critical Fix: Older records might have saved the local `/payu_checkout` URL 
+    # to the database. If we redirect to this, we cause an infinite loop!
+    if link and "/payu_checkout" in link:
+        link = None
+        
     if not link:
         # Generate on the fly using our new OAuth API method
         try:

@@ -37,7 +37,7 @@ def get_payu_access_token(settings):
     """
     import requests
     
-    url = "https://uat-accounts.payu.in/oauth/token-1" if settings.get("is_sandbox") else "https://accounts.payu.in/oauth/token-1"
+    url = "https://uat-accounts.payu.in/oauth/token" if settings.get("is_sandbox") else "https://accounts.payu.in/oauth/token"
     
     payload = {
         "grant_type": "client_credentials",
