@@ -482,11 +482,18 @@ def generate_payment_link_and_send(request_id):
         frappe.throw(f"Failed to generate payment link. Technical Error: {str(e)}")
 
     payment_link = ""
-    # Usually in the response root or under `body`
+    # Usually in the response root or under `body` or `result`
     if "shortUrl" in res_data:
         payment_link = res_data["shortUrl"]
     elif "url" in res_data:
         payment_link = res_data["url"]
+    elif "result" in res_data and isinstance(res_data["result"], dict):
+        # UAT/Sandbox returns the link here
+        payment_link = (
+            res_data["result"].get("paymentLink") or
+            res_data["result"].get("shortUrl") or
+            res_data["result"].get("url") or ""
+        )
     elif "body" in res_data and isinstance(res_data["body"], dict):
         payment_link = res_data["body"].get("shortUrl") or res_data["body"].get("url")
 
