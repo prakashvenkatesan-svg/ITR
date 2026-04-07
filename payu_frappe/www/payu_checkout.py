@@ -16,8 +16,10 @@ def get_context(context):
         return
     
     if doc.payment_status == "Success":
-        context.redirect_url = "/payment-success"
-        return
+        frappe.local.response["type"] = "redirect"
+        frappe.local.response["location"] = "/payment-success"
+        frappe.local.flags.redirect_location = "/payment-success"
+        raise frappe.Redirect
 
     # Check if a link already exists. If not, auto-generate it securely.
     link = doc.payment_link
@@ -36,4 +38,8 @@ def get_context(context):
             context.error_msg = f"Failed to fetch payment link dynamically: {str(e)}"
             return
             
-    context.redirect_url = link
+    # Force a true HTTP 302 Redirect at network level (bypasses HTML completely)
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = link
+    frappe.local.flags.redirect_location = link
+    raise frappe.Redirect
