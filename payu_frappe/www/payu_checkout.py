@@ -32,8 +32,14 @@ def get_context(context):
     if not link:
         # Generate on the fly using our new OAuth API method
         try:
-            from payu_frappe.api import generate_payment_link_and_send
-            res = generate_payment_link_and_send(request_id)
+            # Critical Fix: Guest users cannot read PayU Settings. Ensure this runs as Administrator
+            frappe.set_user("Administrator")
+            try:
+                from payu_frappe.api import generate_payment_link_and_send
+                res = generate_payment_link_and_send(request_id)
+            finally:
+                frappe.set_user("Guest")
+                
             if res and isinstance(res, dict) and res.get("payment_link"):
                 link = res.get("payment_link")
             else:

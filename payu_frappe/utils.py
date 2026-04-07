@@ -22,13 +22,19 @@ def get_payu_settings():
     except Exception:
         # Fallback: read from site_config.json (useful during initial setup)
         conf = frappe.conf
-        return {
+        result = {
+            "merchant_id": conf.get("payu_merchant_id", "").strip() if conf.get("payu_merchant_id") else "",
             "key": conf.get("payu_merchant_key", "").strip() if conf.get("payu_merchant_key") else "",
             "salt": conf.get("payu_merchant_salt", "").strip() if conf.get("payu_merchant_salt") else "",
             "client_id": conf.get("payu_client_id", "").strip() if conf.get("payu_client_id") else "",
             "client_secret": conf.get("payu_client_secret", "").strip() if conf.get("payu_client_secret") else "",
             "is_sandbox": conf.get("payu_is_sandbox", 1),
         }
+        
+        if not result["merchant_id"] and not result["key"]:
+            frappe.log_error("PayU credentials empty! Fallback hit because DocType read failed.", "PayU Config Warning")
+            
+        return result
 
 
 def get_payu_access_token(settings):
