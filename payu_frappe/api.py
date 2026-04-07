@@ -454,6 +454,7 @@ def generate_payment_link_and_send(request_id):
         "currency": "INR",
         "description": "ITR Filing Service",
         "referenceId": txnid,
+        "source": "API",
         "customerName": str(doc.full_name or "Client").strip()[:30],
         "customerEmail": str(doc.email).strip(),
         "customerMobile": str(doc.mobile_number or "9999999999").strip(),
