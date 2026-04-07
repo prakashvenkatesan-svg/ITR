@@ -465,11 +465,17 @@ def generate_payment_link_and_send(request_id):
     
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=15)
+        if res.status_code not in (200, 201):
+            frappe.log_error(f"PayU Link API Error: HTTP {res.status_code} | Response: {res.text}", "PayU API Log")
+            frappe.throw(f"PayU API Rejected the request! Error details: {res.text}")
+            
         res.raise_for_status()
         res_data = res.json()
     except Exception as e:
+        if isinstance(e, frappe.exceptions.ValidationError):
+            raise e
         frappe.log_error(f"PayU Link Generation Error: {str(e)} | Details: {res.text if 'res' in locals() else ''}", "PayU API")
-        frappe.throw("Failed to generate payment link with PayU.")
+        frappe.throw(f"Failed to generate payment link. Technical Error: {str(e)}")
 
     payment_link = ""
     # Usually in the response root or under `body`
