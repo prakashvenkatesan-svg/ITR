@@ -450,6 +450,7 @@ def generate_payment_link_and_send(request_id):
     failure_callback = f"{callback_base}?request_ref={doc.name}&txnid={txnid}&status=failure"
     
     payload = {
+        "merchantId": str(settings.get("merchant_id")).strip(),
         "amount": amt_val,
         "currency": "INR",
         "description": "ITR Filing Service",
