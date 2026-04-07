@@ -1,19 +1,22 @@
 import frappe
 
-
 def get_context(context):
     context.no_cache = 1
     context.show_sidebar = False
     request_id = frappe.request.args.get("request")
     
     if not request_id:
-        frappe.throw("Invalid payment link — no request ID found.")
+        context.error_msg = "Invalid payment link — no request ID found."
+        return
 
-    doc = frappe.get_doc("ITR Filing Submission", request_id)
+    try:
+        doc = frappe.get_doc("ITR Filing Submission", request_id)
+    except frappe.DoesNotExistError:
+        context.error_msg = "Request ID not found in system."
+        return
     
     if doc.payment_status == "Success":
-        frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = "/payment-success"
+        context.redirect_url = "/payment-success"
         return
 
     # Check if a link already exists. If not, auto-generate it securely.
@@ -26,10 +29,11 @@ def get_context(context):
             if res and isinstance(res, dict) and res.get("payment_link"):
                 link = res.get("payment_link")
             else:
-                frappe.throw("Payment link generation failed.")
+                context.error_msg = "Payment link generation failed (Empty response)."
+                return
         except Exception as e:
-            frappe.throw(f"Failed to fetch payment link dynamically: {str(e)}")
+            # Check specifically for permission errors as they are common locally
+            context.error_msg = f"Failed to fetch payment link dynamically: {str(e)}"
+            return
             
-    # Redirect immediately to the highly secure PayU Hosted Page
-    frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = link
+    context.redirect_url = link
