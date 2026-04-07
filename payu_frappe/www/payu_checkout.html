@@ -30,10 +30,16 @@
         <div class="spinner"></div>
         <h2>Securing Checkout...</h2>
         <p>Connecting securely to PayU...</p>
+        <br>
+        <p style="font-size: 14px; color: #555;">If you are not redirected automatically in 2 seconds, click the button below:</p>
+        <br>
+        <p>
+            <a href="{{ redirect_url }}" style="background:#007bff; color:white; font-weight:bold; padding:12px 24px; text-decoration:none; border-radius:6px; display:inline-block; transition: 0.2s;">Continue to Payment</a>
+        </p>
         <script>
             setTimeout(function() {
-                window.location.replace("{{ redirect_url }}");
-            }, 600);
+                window.location.href = "{{ redirect_url }}";
+            }, 800);
         </script>
     {% else %}
         <div class="error-icon">⚠️</div>
