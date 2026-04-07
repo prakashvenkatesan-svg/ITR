@@ -439,6 +439,7 @@ def generate_payment_link_and_send(request_id):
     
     headers = {
         "Authorization": f"Bearer {access_token}",
+        "merchantId": str(settings.get("merchant_id")).strip(),
         "Content-Type": "application/json"
     }
     
