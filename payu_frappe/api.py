@@ -452,7 +452,8 @@ def generate_payment_link_and_send(request_id):
     
     payload = {
         "merchantId": str(settings.get("merchant_id")).strip(),
-        "amount": amt_val,
+        "isAmountFilledByCustomer": False,
+        "subAmount": amt_val,
         "currency": "INR",
         "description": "ITR Filing Service",
         "referenceId": txnid,
