@@ -721,17 +721,18 @@ def auto_assign_regional_manager(doc, method):
     """
     Hook: called `before_insert` via hooks.py doc_events.
 
-    PHASE 1 — Intake Queue Assignment
-    ----------------------------------
-    Decision tree (first match wins):
+    By the time this hook fires, itr_filing_submission.py's own before_insert has
+    already set doc.stage_status via _detect_client_status(). We use that to branch:
 
-    1. If assignment_method != 'Auto Assign' OR RM is already set → do nothing (manual override).
-    2. If PAN exists in a prior submission that already has a real RM from the pool
-       → assign that same RM directly (sticky, skip intake queue).
-    3. Otherwise (genuinely new client) → assign INTAKE_USER (padmapriya) as initial owner.
-
-    PHASE 2 (workload-based reassignment to RM pool) is handled separately
-    in `reassign_to_rm_on_in_progress` which fires on_update.
+    ┌─ EXISTING CLIENT (stage_status == 'Existing Client')
+    │   1. Find prior real RM for this PAN (not padmapriya, not excluded).
+    │      → Found: assign same RM (sticky). NEVER assign to padmapriya.
+    │   2. No real RM yet (all prior submissions still with padmapriya):
+    │      → Assign least-loaded RM from RM_POOL directly.
+    │
+    └─ NEW CLIENT / LEAD GENERATED
+        → Assign INTAKE_USER (padmapriya) as initial intake/queue owner.
+          Phase 2 reassignment happens when padmapriya sets 'In Progress'.
     """
     if getattr(doc, "assignment_method", None) != "Auto Assign":
         return
@@ -739,27 +740,53 @@ def auto_assign_regional_manager(doc, method):
         return  # Already manually assigned — respect it
 
     pan = (getattr(doc, "pan_number", None) or "").strip().upper()
+    stage = getattr(doc, "stage_status", "") or ""
 
-    # --- Case 1: Returning client (same PAN already assigned to a real RM) ---
-    prior_rm = _get_prior_rm_for_pan(pan)
-    if prior_rm:
-        doc.regional_manager = prior_rm
-        frappe.log_error(
-            title="RM Sticky Assignment (Returning Client)",
-            message=(
-                f"PAN {pan} — returning client detected.\n"
-                f"Reusing existing RM: {prior_rm}\n"
-                f"New submission: {doc.get('name', 'pending')}"
+    # ── EXISTING CLIENT ──────────────────────────────────────────────────────
+    if stage == "Existing Client":
+        # Priority 1: sticky assignment — this PAN has a real RM from the pool
+        prior_rm = _get_prior_rm_for_pan(pan)
+        if prior_rm:
+            doc.regional_manager = prior_rm
+            frappe.log_error(
+                title="RM Sticky Assignment (Existing Client)",
+                message=(
+                    f"PAN {pan} — existing client.\n"
+                    f"Previously mapped RM → assigning: {prior_rm}"
+                )
             )
+            return
+
+        # Priority 2: no real RM yet → assign directly to least-loaded RM
+        # Existing clients must NEVER go to padmapriya (intake is for new clients only)
+        target_rm = _get_least_loaded_rm()
+        if target_rm:
+            doc.regional_manager = target_rm
+            frappe.log_error(
+                title="RM Direct Assignment (Existing Client, No Prior RM)",
+                message=(
+                    f"PAN {pan} — existing client, no real RM found in prior records.\n"
+                    f"Assigning directly to least-loaded RM: {target_rm}"
+                )
+            )
+            return
+
+        # Last resort — RM_POOL is empty (should never happen)
+        frappe.log_error(
+            title="RM Assignment Warning — Pool Empty",
+            message=f"PAN {pan} — existing client but RM_POOL is empty. Falling back to intake user."
         )
+        doc.regional_manager = INTAKE_USER
         return
 
-    # --- Case 2: New client → assign to intake queue owner ---
+    # ── NEW CLIENT / LEAD GENERATED ───────────────────────────────────────────
+    # Fresh PAN → padmapriya intake queue. Phase 2 fires on 'In Progress' save.
     doc.regional_manager = INTAKE_USER
     frappe.log_error(
         title="RM Intake Assignment (New Client)",
         message=(
-            f"New submission (PAN: {pan or 'N/A'}) → queued to intake owner: {INTAKE_USER}"
+            f"New submission (PAN: {pan or 'N/A'}, Stage: {stage}) "
+            f"→ assigned to intake queue: {INTAKE_USER}"
         )
     )
 
