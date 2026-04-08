@@ -246,21 +246,9 @@ def submit_itr_details():
             message=f"Created: {doc.name}\nFiles Saved: {', '.join(files_attached) if files_attached else 'None'}"
         )
 
-        # --- Automated WhatsApp Confirmation (Template required to reach new users) ---
-        try:
-            from payu_frappe.utils import send_whatsapp_message
-            # Template VX208528995 expects 1 placeholder: {{1}} = link
-            send_whatsapp_message(
-                receiver_number=doc.mobile_number, 
-                message_text=f"Please complete the payment by clicking followed by link https://aionionadvisory.com. Please contact us if you face any issues.", 
-                itr_submission=doc.name, 
-                country_code=doc.country_code,
-                regional_manager=doc.regional_manager or "Administrator",
-                template_id="VX208528995",
-                template_params=["https://aionionadvisory.com"]
-            )
-        except Exception as we:
-            frappe.log_error(title="Auto WhatsApp Error", message=str(we))
+        # --- Auto WhatsApp Confirmation Disabled ---
+        # The user requested that no messages be sent automatically on submission.
+        # Links and messages will now only be sent manually via the PayU button.
 
         return {
             "success": True,
