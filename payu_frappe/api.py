@@ -655,37 +655,74 @@ def verify_payment_with_payu_api(txnid, settings):
 
 def auto_assign_regional_manager(doc, method):
     """
-    Called `before_insert` to perform a Round Robin workload distribution.
-    Only executes if assignment_method is 'Auto Assign' and no user is provided.
+    Called `before_insert` to assign a Regional Manager (RM).
+
+    Logic:
+    1. If assignment_method is not 'Auto Assign' or RM is already set → skip.
+    2. If the client's PAN already has a prior submission with an assigned RM
+       → reuse that same RM (keeps duplicate submissions with the same RM).
+    3. If it's a genuinely new PAN → perform Round Robin assignment
+       based on current workload, excluding developer/admin accounts.
     """
-    if getattr(doc, "assignment_method", None) == "Auto Assign" and not getattr(doc, "regional_manager", None):
-        # Fetch all active users with the role 'ITR User'
-        itr_users = frappe.db.sql("""
-            select distinct parent from `tabHas Role`
-            where role='ITR User' and parenttype='User'
-        """, as_dict=True)
+    if getattr(doc, "assignment_method", None) != "Auto Assign":
+        return
+    if getattr(doc, "regional_manager", None):
+        return  # RM already manually set — respect it
 
-        if not itr_users:
+    # --- Users excluded from RM assignment (developers/admins, not client-handlers) ---
+    EXCLUDED_USERS = {
+        "prakash.venkatesan@aionioncapital.com",
+        "Administrator",
+    }
+
+    # --- Step 1: Check if PAN already has a prior submission with an assigned RM ---
+    pan = (getattr(doc, "pan_number", None) or "").strip().upper()
+    if pan:
+        prior_rm = frappe.db.get_value(
+            "ITR Filing Submission",
+            filters={"pan_number": pan, "regional_manager": ["!=", ""]},
+            fieldname="regional_manager",
+            order_by="creation asc"   # get the FIRST/earliest assignment
+        )
+        if prior_rm and prior_rm not in EXCLUDED_USERS:
+            # Reuse the same RM that was assigned during the first submission
+            doc.regional_manager = prior_rm
+            frappe.log_error(
+                title="RM Reuse (Duplicate PAN)",
+                message=f"PAN {pan} → reusing RM {prior_rm} for {doc.name}"
+            )
             return
 
-        user_emails = []
-        for u in itr_users:
-            if frappe.db.get_value("User", u.parent, "enabled"):
-                user_emails.append(u.parent)
+    # --- Step 2: New client — Round Robin assignment among active ITR Users ---
+    itr_users = frappe.db.sql("""
+        select distinct parent from `tabHas Role`
+        where role='ITR User' and parenttype='User'
+    """, as_dict=True)
 
-        if not user_emails:
-            return
+    if not itr_users:
+        return
 
-        # Calculate current workload: submissions where regional_manager is the user
-        workload = {}
-        for u in user_emails:
-            count = frappe.db.count("ITR Filing Submission", {"regional_manager": u})
-            workload[u] = count
+    # Build eligible RM pool: active users, not in excluded list
+    user_emails = []
+    for u in itr_users:
+        email = u.parent
+        if email in EXCLUDED_USERS:
+            continue
+        if frappe.db.get_value("User", email, "enabled"):
+            user_emails.append(email)
 
-        if workload:
-            # Pick user with the lowest count
-            selected_user = min(workload, key=workload.get)
-            doc.regional_manager = selected_user
+    if not user_emails:
+        return
+
+    # Pick the RM with the lowest current workload (fewest submissions assigned)
+    workload = {}
+    for u in user_emails:
+        count = frappe.db.count("ITR Filing Submission", {"regional_manager": u})
+        workload[u] = count
+
+    if workload:
+        selected_user = min(workload, key=workload.get)
+        doc.regional_manager = selected_user
 
 
 def get_permission_query_conditions(user):
