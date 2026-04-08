@@ -26,15 +26,16 @@ class ITRFilingSubmission(Document):
         Check if the client's PAN already exists in ITR Filing Submission.
         Returns 'Existing Client' if a prior record is found, else 'New Client'.
         Falls back to 'Lead Generated' if PAN is not provided.
+        The field name on the DocType is 'pan_number'.
         """
-        pan = (self.pan or "").strip().upper()
+        pan = (self.pan_number or "").strip().upper()
         if not pan:
             # No PAN provided — cannot determine, use default
             return "Lead Generated"
 
         existing = frappe.db.exists(
             "ITR Filing Submission",
-            {"pan": pan}
+            {"pan_number": pan}
         )
         return "Existing Client" if existing else "New Client"
 

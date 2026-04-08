@@ -51,9 +51,10 @@ def submit_itr_details():
 
         doc = frappe.new_doc("ITR Filing Submission")
 
-        # Workflow defaults
+        # Workflow defaults — stage_status is auto-set by before_insert hook
         doc.assignment_method = "Auto Assign"
-        doc.stage_status = "Lead Generated"
+        # NOTE: Do NOT set stage_status here. before_insert in itr_filing_submission.py
+        # will auto-detect 'New Client' or 'Existing Client' based on the PAN number.
 
         # --- Section 1: Basic Info ---
         doc.interested_in_services = data.get("interestedInService") or data.get("interestedInServices")
