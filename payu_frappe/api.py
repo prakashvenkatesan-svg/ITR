@@ -650,100 +650,280 @@ def verify_payment_with_payu_api(txnid, settings):
 
 
 # ---------------------------------------------------------------------------
-# Workload Assignment & Data Privacy Hooks
+# RM Assignment Workflow
 # ---------------------------------------------------------------------------
+
+# The designated intake/queue owner — all new client submissions land here first.
+# padmapriya reviews and moves the stage to "In Progress" to trigger RM assignment.
+INTAKE_USER = "padmapriya.s@aionioncapital.com"
+
+# The RM pool eligible for workload-based distribution (when stage moves to In Progress)
+RM_POOL = [
+    "srinivasan.hs@aionioncapital.com",
+    "umeshkumar.s@aionioncapital.com",
+    "bagiayalakshmi.p@aionioncapital.com",
+    "abdulrahim.p@aionioncapital.com",
+    "nethaji.a@aionioncapital.com",
+    "meenatshisundharesh.vm@aionioncapital.com",
+]
+
+# Users completely excluded from the RM pool — developers/admins who must never own client records
+EXCLUDED_USERS = {
+    "prakash.venkatesan@aionioncapital.com",
+    "Administrator",
+}
+
+
+def _get_prior_rm_for_pan(pan):
+    """
+    Check if the given PAN has a prior submission already assigned to a real RM
+    (i.e. not padmapriya or an excluded user).
+
+    Returns the RM email string, or None if this is a brand-new PAN.
+    """
+    if not pan:
+        return None
+    pan = pan.strip().upper()
+
+    prior_rm = frappe.db.get_value(
+        "ITR Filing Submission",
+        filters={
+            "pan_number": pan,
+            "regional_manager": ["not in", ["", INTAKE_USER] + list(EXCLUDED_USERS)]
+        },
+        fieldname="regional_manager",
+        order_by="creation asc"  # earliest assignment wins (most stable)
+    )
+    return prior_rm or None
+
+
+def _get_least_loaded_rm():
+    """
+    From the RM_POOL, return the RM email with the fewest currently active
+    (non-Completed) ITR Filing Submission records assigned to them.
+    Falls back to the first RM in the pool if pool is empty.
+    """
+    if not RM_POOL:
+        return None
+
+    workload = {}
+    for rm in RM_POOL:
+        count = frappe.db.count(
+            "ITR Filing Submission",
+            {"regional_manager": rm, "stage_status": ["not in", ["Completed"]]}
+        )
+        workload[rm] = count
+
+    return min(workload, key=workload.get)
+
 
 def auto_assign_regional_manager(doc, method):
     """
-    Called `before_insert` to assign a Regional Manager (RM).
+    Hook: called `before_insert` via hooks.py doc_events.
 
-    Logic:
-    1. If assignment_method is not 'Auto Assign' or RM is already set → skip.
-    2. If the client's PAN already has a prior submission with an assigned RM
-       → reuse that same RM (keeps duplicate submissions with the same RM).
-    3. If it's a genuinely new PAN → perform Round Robin assignment
-       based on current workload, excluding developer/admin accounts.
+    PHASE 1 — Intake Queue Assignment
+    ----------------------------------
+    Decision tree (first match wins):
+
+    1. If assignment_method != 'Auto Assign' OR RM is already set → do nothing (manual override).
+    2. If PAN exists in a prior submission that already has a real RM from the pool
+       → assign that same RM directly (sticky, skip intake queue).
+    3. Otherwise (genuinely new client) → assign INTAKE_USER (padmapriya) as initial owner.
+
+    PHASE 2 (workload-based reassignment to RM pool) is handled separately
+    in `reassign_to_rm_on_in_progress` which fires on_update.
     """
     if getattr(doc, "assignment_method", None) != "Auto Assign":
         return
     if getattr(doc, "regional_manager", None):
-        return  # RM already manually set — respect it
+        return  # Already manually assigned — respect it
 
-    # --- Users excluded from RM assignment (developers/admins, not client-handlers) ---
-    EXCLUDED_USERS = {
-        "prakash.venkatesan@aionioncapital.com",
-        "Administrator",
+    pan = (getattr(doc, "pan_number", None) or "").strip().upper()
+
+    # --- Case 1: Returning client (same PAN already assigned to a real RM) ---
+    prior_rm = _get_prior_rm_for_pan(pan)
+    if prior_rm:
+        doc.regional_manager = prior_rm
+        frappe.log_error(
+            title="RM Sticky Assignment (Returning Client)",
+            message=(
+                f"PAN {pan} — returning client detected.\n"
+                f"Reusing existing RM: {prior_rm}\n"
+                f"New submission: {doc.get('name', 'pending')}"
+            )
+        )
+        return
+
+    # --- Case 2: New client → assign to intake queue owner ---
+    doc.regional_manager = INTAKE_USER
+    frappe.log_error(
+        title="RM Intake Assignment (New Client)",
+        message=(
+            f"New submission (PAN: {pan or 'N/A'}) → queued to intake owner: {INTAKE_USER}"
+        )
+    )
+
+
+def reassign_to_rm_on_in_progress(doc, method):
+    """
+    Hook: called `on_update` via hooks.py doc_events.
+
+    PHASE 2 — Workload-Based Reassignment
+    ----------------------------------------
+    Fires only when ALL three conditions are met:
+      A. stage_status was just set to "In Progress"
+      B. The current regional_manager is still INTAKE_USER (padmapriya)
+      C. The record uses 'Auto Assign' method (not manually overridden)
+
+    Assignment priority:
+      1. If PAN has a prior submission with a real RM → sticky assignment
+      2. Otherwise → assign from RM_POOL by least active workload
+    """
+    # Condition A: stage must be exactly "In Progress"
+    if doc.stage_status != "In Progress":
+        return
+
+    # Condition B: only reassign if record is still sitting in intake queue
+    if doc.regional_manager != INTAKE_USER:
+        return
+
+    # Condition C: respect manual assignments
+    if getattr(doc, "assignment_method", None) != "Auto Assign":
+        return
+
+    pan = (getattr(doc, "pan_number", None) or "").strip().upper()
+
+    # Priority 1: Sticky — PAN has an existing RM from a prior submission
+    prior_rm = _get_prior_rm_for_pan(pan)
+    if prior_rm:
+        frappe.db.set_value("ITR Filing Submission", doc.name, "regional_manager", prior_rm)
+        frappe.db.commit()
+        frappe.log_error(
+            title="RM Reassigned (Sticky — In Progress)",
+            message=(
+                f"Doc {doc.name} (PAN: {pan}) marked In Progress.\n"
+                f"Prior RM found → reassigned to: {prior_rm}"
+            )
+        )
+        return
+
+    # Priority 2: New client → assign the least-loaded RM from the pool
+    target_rm = _get_least_loaded_rm()
+    if not target_rm:
+        frappe.log_error(
+            title="RM Reassignment Skipped",
+            message=(
+                f"Doc {doc.name} marked In Progress but RM_POOL is empty.\n"
+                f"Record remains with intake user: {INTAKE_USER}"
+            )
+        )
+        return
+
+    frappe.db.set_value("ITR Filing Submission", doc.name, "regional_manager", target_rm)
+    frappe.db.commit()
+    frappe.log_error(
+        title="RM Reassigned (Workload — In Progress)",
+        message=(
+            f"Doc {doc.name} (PAN: {pan or 'N/A'}) marked In Progress.\n"
+            f"Assigned to least-loaded RM: {target_rm}"
+        )
+    )
+
+
+@frappe.whitelist()
+def bulk_reassign_rm(docnames, target_rm):
+    """
+    Admin API: Bulk reassign a list of ITR Filing Submission records to a specific RM.
+    This is a manual override — sets assignment_method to 'Manual Assign' on all records.
+
+    Args:
+        docnames (list|str): JSON list of ITR Filing Submission document names.
+        target_rm (str): Email of the RM to assign all records to.
+
+    Returns:
+        dict: {success, updated, failed, message}
+    """
+    if not frappe.has_permission("ITR Filing Submission", "write"):
+        frappe.throw("You do not have permission to reassign records.")
+
+    if isinstance(docnames, str):
+        docnames = frappe.parse_json(docnames)
+
+    if not docnames or not target_rm:
+        frappe.throw("Please provide both record names and a target RM email.")
+
+    # Validate the target RM exists and is active
+    if not frappe.db.get_value("User", target_rm, "enabled"):
+        frappe.throw(f"User '{target_rm}' is not active or does not exist.")
+
+    updated = []
+    failed = []
+
+    for name in docnames:
+        try:
+            frappe.db.set_value(
+                "ITR Filing Submission",
+                name,
+                {
+                    "regional_manager": target_rm,
+                    "assignment_method": "Manual Assign"
+                }
+            )
+            updated.append(name)
+        except Exception as e:
+            frappe.log_error(
+                title="Bulk RM Reassign Error",
+                message=f"Failed to reassign {name}: {str(e)}"
+            )
+            failed.append(name)
+
+    if updated:
+        frappe.db.commit()
+
+    frappe.log_error(
+        title="Bulk RM Reassignment Complete",
+        message=(
+            f"Performed by: {frappe.session.user}\n"
+            f"Target RM: {target_rm}\n"
+            f"Updated: {len(updated)} records\n"
+            f"Failed: {failed or 'None'}"
+        )
+    )
+
+    return {
+        "success": True,
+        "updated": len(updated),
+        "failed": len(failed),
+        "message": f"{len(updated)} record(s) successfully reassigned to {target_rm}."
     }
 
-    # --- Step 1: Check if PAN already has a prior submission with an assigned RM ---
-    pan = (getattr(doc, "pan_number", None) or "").strip().upper()
-    if pan:
-        prior_rm = frappe.db.get_value(
-            "ITR Filing Submission",
-            filters={"pan_number": pan, "regional_manager": ["!=", ""]},
-            fieldname="regional_manager",
-            order_by="creation asc"   # get the FIRST/earliest assignment
-        )
-        if prior_rm and prior_rm not in EXCLUDED_USERS:
-            # Reuse the same RM that was assigned during the first submission
-            doc.regional_manager = prior_rm
-            frappe.log_error(
-                title="RM Reuse (Duplicate PAN)",
-                message=f"PAN {pan} → reusing RM {prior_rm} for {doc.name}"
-            )
-            return
 
-    # --- Step 2: New client — Round Robin assignment among active ITR Users ---
-    itr_users = frappe.db.sql("""
-        select distinct parent from `tabHas Role`
-        where role='ITR User' and parenttype='User'
-    """, as_dict=True)
-
-    if not itr_users:
-        return
-
-    # Build eligible RM pool: active users, not in excluded list
-    user_emails = []
-    for u in itr_users:
-        email = u.parent
-        if email in EXCLUDED_USERS:
-            continue
-        if frappe.db.get_value("User", email, "enabled"):
-            user_emails.append(email)
-
-    if not user_emails:
-        return
-
-    # Pick the RM with the lowest current workload (fewest submissions assigned)
-    workload = {}
-    for u in user_emails:
-        count = frappe.db.count("ITR Filing Submission", {"regional_manager": u})
-        workload[u] = count
-
-    if workload:
-        selected_user = min(workload, key=workload.get)
-        doc.regional_manager = selected_user
-
+# ---------------------------------------------------------------------------
+# Data Privacy / Permission Hooks
+# ---------------------------------------------------------------------------
 
 def get_permission_query_conditions(user):
     """
-    Hook to dynamically restrict what rows an 'ITR User' can fetch from the database.
-    (This entirely replaces the basic 'Only If Creator' requirement by ensuring assigned users see the row).
+    Hook to dynamically restrict which database rows an 'ITR User' can fetch.
+    System Managers and Administrator see all records.
+    All others see only records where they are the regional_manager or the owner.
     """
-    if not user: 
+    if not user:
         user = frappe.session.user
 
-    # System Managers and Administrator bypass this rule.
+    # System Managers and Administrator bypass row-level filtering
     if "System Manager" in frappe.get_roles(user) or user == "Administrator":
         return ""
 
-    # Must be either the owner (creator) or explicitly assigned as regional_manager
-    return f"(`tabITR Filing Submission`.owner = '{user}' or `tabITR Filing Submission`.regional_manager = '{user}')"
+    return (
+        f"(`tabITR Filing Submission`.owner = '{user}' "
+        f"or `tabITR Filing Submission`.regional_manager = '{user}')"
+    )
 
 
 def has_custom_permission(doc, ptype, user):
     """
-    Hook to dynamically check permission when loading a specific document form.
+    Hook to dynamically check per-document permission when a specific form is opened.
     """
     if not user:
         user = frappe.session.user
@@ -751,9 +931,7 @@ def has_custom_permission(doc, ptype, user):
     if "System Manager" in frappe.get_roles(user) or user == "Administrator":
         return True
 
-    # Allow if user created it or is assigned
     if doc.owner == user or doc.regional_manager == user:
         return True
 
     return False
-
