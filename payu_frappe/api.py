@@ -797,64 +797,107 @@ def reassign_to_rm_on_in_progress(doc, method):
 
     PHASE 2 — Workload-Based Reassignment
     ----------------------------------------
-    Fires only when ALL three conditions are met:
-      A. stage_status was just set to "In Progress"
-      B. The current regional_manager is still INTAKE_USER (padmapriya)
-      C. The record uses 'Auto Assign' method (not manually overridden)
+    Trigger condition (ALL must be true):
+      A. stage_status is now "In Progress"
+      B. Before this save, stage_status was "New Client" (exact transition check)
+      C. regional_manager is still INTAKE_USER (padmapriya — still owns the record)
+      D. assignment_method is "Auto Assign" (not manually overridden)
 
-    Assignment priority:
-      1. If PAN has a prior submission with a real RM → sticky assignment
-      2. Otherwise → assign from RM_POOL by least active workload
+    Uses Frappe's get_doc_before_save() to detect the exact New Client→In Progress
+    transition, preventing duplicate firing on subsequent saves.
     """
-    # Condition A: stage must be exactly "In Progress"
+    # Condition A
     if doc.stage_status != "In Progress":
         return
 
-    # Condition B: only reassign if record is still sitting in intake queue
+    # Condition B — verify exact stage transition from "New Client"
+    doc_before = doc.get_doc_before_save()
+    prev_stage = doc_before.stage_status if doc_before else ""
+    if prev_stage != "New Client":
+        return
+
+    # Condition C — record must still be in the intake queue
     if doc.regional_manager != INTAKE_USER:
         return
 
-    # Condition C: respect manual assignments
+    # Condition D — respect manual overrides
     if getattr(doc, "assignment_method", None) != "Auto Assign":
         return
 
     pan = (getattr(doc, "pan_number", None) or "").strip().upper()
 
-    # Priority 1: Sticky — PAN has an existing RM from a prior submission
+    # Determine target RM: sticky if PAN has a prior real RM, else least-loaded
     prior_rm = _get_prior_rm_for_pan(pan)
-    if prior_rm:
-        frappe.db.set_value("ITR Filing Submission", doc.name, "regional_manager", prior_rm)
-        frappe.db.commit()
-        frappe.log_error(
-            title="RM Reassigned (Sticky — In Progress)",
-            message=(
-                f"Doc {doc.name} (PAN: {pan}) marked In Progress.\n"
-                f"Prior RM found → reassigned to: {prior_rm}"
-            )
-        )
-        return
+    target_rm = prior_rm if prior_rm else _get_least_loaded_rm()
 
-    # Priority 2: New client → assign the least-loaded RM from the pool
-    target_rm = _get_least_loaded_rm()
     if not target_rm:
         frappe.log_error(
-            title="RM Reassignment Skipped",
-            message=(
-                f"Doc {doc.name} marked In Progress but RM_POOL is empty.\n"
-                f"Record remains with intake user: {INTAKE_USER}"
-            )
+            title="RM Reassignment Skipped — Pool Empty",
+            message=f"Doc {doc.name} moved to In Progress but no RM available. Stays with intake user."
         )
         return
 
+    # Update regional_manager in DB and sync in-memory doc
     frappe.db.set_value("ITR Filing Submission", doc.name, "regional_manager", target_rm)
+    doc.regional_manager = target_rm  # keep in-memory doc in sync for caller
     frappe.db.commit()
+
+    # Add Frappe built-in assignment (shows in sidebar, sends notification to RM)
+    try:
+        frappe.get_doc({
+            "doctype": "ToDo",
+            "reference_type": "ITR Filing Submission",
+            "reference_name": doc.name,
+            "assigned_by": INTAKE_USER,
+            "owner": target_rm,
+            "description": f"Auto-assigned ITR record (PAN: {pan or 'N/A'}) — workload-based allocation.",
+            "status": "Open",
+            "priority": "Medium"
+        }).insert(ignore_permissions=True)
+    except Exception:
+        pass  # Do not block assignment if ToDo creation fails
+
+    assignment_type = "Sticky (Prior RM)" if prior_rm else "Workload (Least Loaded)"
     frappe.log_error(
-        title="RM Reassigned (Workload — In Progress)",
+        title=f"RM Reassigned ({assignment_type} — In Progress)",
         message=(
-            f"Doc {doc.name} (PAN: {pan or 'N/A'}) marked In Progress.\n"
-            f"Assigned to least-loaded RM: {target_rm}"
+            f"Doc: {doc.name}\n"
+            f"PAN: {pan or 'N/A'}\n"
+            f"Transition: New Client → In Progress\n"
+            f"Assigned to: {target_rm}\n"
+            f"Method: {assignment_type}"
         )
     )
+
+
+@frappe.whitelist()
+def get_rm_workload():
+    """
+    Returns current workload for each RM in the pool.
+    Used by the 'RM Workload' button in the form view so padmapriya / admins
+    can see who will be auto-assigned before setting In Progress.
+
+    Active record = any record NOT in 'Completed' stage.
+    """
+    workload = []
+    for rm in RM_POOL:
+        active_count = frappe.db.count(
+            "ITR Filing Submission",
+            {"regional_manager": rm, "stage_status": ["not in", ["Completed"]]}
+        )
+        full_name = frappe.db.get_value("User", rm, "full_name") or rm.split("@")[0]
+        workload.append({
+            "email": rm,
+            "name": full_name,
+            "active_records": active_count
+        })
+
+    # Sort by workload ascending — first entry is who will be auto-assigned next
+    workload.sort(key=lambda x: x["active_records"])
+    if workload:
+        workload[0]["next_assign"] = True
+
+    return workload
 
 
 @frappe.whitelist()

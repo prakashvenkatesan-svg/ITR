@@ -32,6 +32,67 @@ frappe.ui.form.on('ITR Filing Submission', {
             });
         }
 
+        // --- RM Workload Button ---
+        // Visible to padmapriya (intake user) and System Managers when stage is "New Client"
+        const isIntakeUser = frappe.session.user === 'padmapriya.s@aionioncapital.com';
+        const isSysManager = frappe.user.has_role('System Manager');
+        if (!frm.is_new() && (isIntakeUser || isSysManager) && frm.doc.stage_status === 'New Client') {
+            frm.add_custom_button(__('📊 RM Workload'), function() {
+                frappe.call({
+                    method: 'payu_frappe.api.get_rm_workload',
+                    freeze: true,
+                    freeze_message: __('Loading workload data…'),
+                    callback(r) {
+                        if (!r.message) return;
+                        const rows = r.message.map(rm => {
+                            const badge = rm.next_assign
+                                ? `<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;">Next ✓</span>`
+                                : '';
+                            const countColor = rm.active_records > 10 ? '#ef4444' : rm.active_records > 5 ? '#f59e0b' : '#22c55e';
+                            return `
+                                <tr style="border-bottom:1px solid #f0f0f0;">
+                                    <td style="padding:10px 12px;font-weight:${rm.next_assign ? '700' : '400'}">${rm.name}</td>
+                                    <td style="padding:10px 12px;color:#666;font-size:12px;">${rm.email}</td>
+                                    <td style="padding:10px 12px;text-align:center;">
+                                        <span style="background:${countColor};color:#fff;padding:3px 10px;border-radius:99px;font-weight:600;">${rm.active_records}</span>
+                                    </td>
+                                    <td style="padding:10px 12px;text-align:center;">${badge}</td>
+                                </tr>`;
+                        }).join('');
+
+                        const html = `
+                            <div style="font-family:sans-serif;">
+                                <p style="color:#666;font-size:13px;margin-bottom:12px;">
+                                    When you save this record as <strong>In Progress</strong>, the system will auto-assign it
+                                    to the RM marked <span style="background:#22c55e;color:#fff;padding:1px 7px;border-radius:99px;font-size:11px;">Next ✓</span> below.
+                                </p>
+                                <table width="100%" style="border-collapse:collapse;font-size:13px;">
+                                    <thead>
+                                        <tr style="background:#f8f9fa;color:#444;">
+                                            <th style="padding:8px 12px;text-align:left;">RM Name</th>
+                                            <th style="padding:8px 12px;text-align:left;">Email</th>
+                                            <th style="padding:8px 12px;text-align:center;">Active Records</th>
+                                            <th style="padding:8px 12px;text-align:center;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                                <p style="color:#888;font-size:11px;margin-top:10px;">
+                                    * Active records = all records not yet marked as Completed.
+                                </p>
+                            </div>`;
+
+                        frappe.msgprint({
+                            title: __('RM Workload Distribution'),
+                            message: html,
+                            indicator: 'blue',
+                            wide: true
+                        });
+                    }
+                });
+            }, __('Assignment'));
+        }
+
         // Show/Hide IT Portal Password
         let pwd_field = frm.fields_dict.it_portal_password;
         if (pwd_field && pwd_field.df.fieldtype === 'Data') {
