@@ -23,21 +23,38 @@ class ITRFilingSubmission(Document):
 
     def _detect_client_status(self):
         """
-        Check if the client's PAN already exists in ITR Filing Submission.
-        Returns 'Existing Client' if a prior record is found, else 'New Client'.
-        Falls back to 'Lead Generated' if PAN is not provided.
-        The field name on the DocType is 'pan_number'.
+        Determine if this is a New or Existing Client based on PAN.
+
+        Checks TWO sources:
+        1. Customer DocType (ERPNext) — where Customer Name = PAN (e.g., 'ABLHS9005F')
+        2. ITR Filing Submission DocType — prior year/repeated submissions
+
+        Returns:
+            'Existing Client' — if PAN found in Customer or prior ITR submission
+            'New Client'      — if PAN is not found anywhere
+            'Lead Generated'  — fallback if PAN field is empty
         """
         pan = (self.pan_number or "").strip().upper()
         if not pan:
-            # No PAN provided — cannot determine, use default
             return "Lead Generated"
 
-        existing = frappe.db.exists(
+        # Check 1: ERPNext Customer DocType — Customer Name = PAN number (e.g. 'ABLHS9005F')
+        existing_customer = frappe.db.exists(
+            "Customer",
+            {"customer_name": pan}
+        )
+        if existing_customer:
+            return "Existing Client"
+
+        # Check 2: Prior ITR Filing Submission with same PAN
+        existing_itr = frappe.db.exists(
             "ITR Filing Submission",
             {"pan_number": pan}
         )
-        return "Existing Client" if existing else "New Client"
+        if existing_itr:
+            return "Existing Client"
+
+        return "New Client"
 
     def sync_payment_amount(self):
         """Sync payment_amount with service_amount automatically."""
