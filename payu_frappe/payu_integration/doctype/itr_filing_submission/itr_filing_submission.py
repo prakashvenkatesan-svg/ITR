@@ -11,14 +11,32 @@ class ITRFilingSubmission(Document):
         self.auto_generate_payment_link()
 
     def before_insert(self):
-        """Set default values before insert."""
+        """Set default values before insert, and auto-detect New vs Existing Client."""
         if not self.payment_status:
             self.payment_status = "Pending"
-        if not self.stage_status:
-            self.stage_status = "Lead Generated"
         if not self.assignment_method:
             self.assignment_method = "Auto Assign"
         self.sync_payment_amount()
+
+        # --- Auto-detect New Client vs Existing Client based on PAN ---
+        self.stage_status = self._detect_client_status()
+
+    def _detect_client_status(self):
+        """
+        Check if the client's PAN already exists in ITR Filing Submission.
+        Returns 'Existing Client' if a prior record is found, else 'New Client'.
+        Falls back to 'Lead Generated' if PAN is not provided.
+        """
+        pan = (self.pan or "").strip().upper()
+        if not pan:
+            # No PAN provided — cannot determine, use default
+            return "Lead Generated"
+
+        existing = frappe.db.exists(
+            "ITR Filing Submission",
+            {"pan": pan}
+        )
+        return "Existing Client" if existing else "New Client"
 
     def sync_payment_amount(self):
         """Sync payment_amount with service_amount automatically."""
