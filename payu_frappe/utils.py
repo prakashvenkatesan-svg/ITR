@@ -48,8 +48,7 @@ def get_payu_access_token(settings):
     payload = {
         "grant_type": "client_credentials",
         "client_id": settings.get("client_id"),
-        "client_secret": settings.get("client_secret"),
-        "scope": "create_payment_links"
+        "client_secret": settings.get("client_secret")
     }
     
     headers = {
