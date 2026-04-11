@@ -31,12 +31,12 @@ class ITRFilingSubmission(Document):
 
         Returns:
             'Existing Client' — if PAN found in Customer or prior ITR submission
-            'New Client'      — if PAN is not found anywhere
-            'Lead Generated'  — fallback if PAN field is empty
+            'New Client'      — if PAN is not found anywhere (including if PAN is empty)
         """
         pan = (self.pan_number or "").strip().upper()
         if not pan:
-            return "Lead Generated"
+            # PAN missing — default to New Client. Never show "Lead Generated".
+            return "New Client"
 
         # Check 1: ERPNext Customer DocType — Customer Name = PAN number (e.g. 'ABLHS9005F')
         existing_customer = frappe.db.exists(
