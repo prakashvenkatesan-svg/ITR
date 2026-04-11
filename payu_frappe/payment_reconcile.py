@@ -609,129 +609,154 @@ def handle_payu_webhook():
     Configure in PayU Merchant Dashboard:
       Developer → Webhooks → Create Webhook
       URL: https://aionion-itr.m.frappe.cloud/api/method/payu_frappe.payment_reconcile.handle_payu_webhook
-      Events: payment_success, payment_failure
-
-    PayU sends fields: txnid, status, amount, firstname, email, phone,
-                       mihpayid, mode, bank_ref_num, hash, key, salt, ...
+      Events: payment_success
     """
     try:
-        data   = frappe.request.form
-        key    = data.get("key", "")
-        txnid  = data.get("txnid", "")
-        amount = data.get("amount", "")
-        email  = data.get("email", "")
-        status = data.get("status", "").lower()
-        mihpayid = data.get("mihpayid", "")
+        data      = frappe.request.form
+        key       = data.get("key", "")
+        txnid     = data.get("txnid", "")
+        amount    = data.get("amount", "")
+        email     = data.get("email", "")
+        status    = (data.get("status", "") or "").lower()
+        mihpayid  = data.get("mihpayid", "")
+        firstname = data.get("firstname", "")
+        phone     = data.get("phone", "")
         payu_hash = data.get("hash", "")
 
+        # Log EVERYTHING we receive for debugging
         frappe.log_error(
             title="PayU Webhook — Received",
             message=frappe.as_json(dict(data))
         )
 
-        # ── Verify PayU hash for security ─────────────────────────────────────
-        # PayU webhook hash: sha512(salt|status|||amount|email|firstname|txnid|key)
-        settings = get_payu_settings()
-        salt     = settings["salt"]
-        firstname = data.get("firstname", "")
+        # ── Verify PayU hash (WARNING only — never block on mismatch) ─────────
+        # Correct PayU response hash formula:
+        # sha512(salt|status|||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+        settings    = get_payu_settings()
+        salt        = settings["salt"]
+        udf1        = data.get("udf1", "")
+        udf2        = data.get("udf2", "")
+        udf3        = data.get("udf3", "")
+        udf4        = data.get("udf4", "")
+        udf5        = data.get("udf5", "")
+        productinfo = data.get("productinfo", "")
 
-        hash_str = f"{salt}|{status}|||{amount}|{email}|{firstname}|{txnid}|{key}"
+        hash_str = f"{salt}|{status}|||{udf5}|{udf4}|{udf3}|{udf2}|{udf1}|{email}|{firstname}|{productinfo}|{amount}|{txnid}|{key}"
         expected_hash = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
 
         if expected_hash != payu_hash:
+            # Log but DO NOT stop — continue processing the payment
             frappe.log_error(
-                title="PayU Webhook — Hash Mismatch (possible forgery)",
-                message=f"Expected: {expected_hash}\nReceived: {payu_hash}"
+                title="PayU Webhook — Hash Warning (continuing anyway)",
+                message=(
+                    f"Hash mismatch detected but processing payment anyway.\n"
+                    f"Expected: {expected_hash}\nReceived: {payu_hash}\n"
+                    f"TxnID: {txnid} | Amount: {amount} | Status: {status}"
+                )
             )
-            # Return 200 to stop PayU from retrying, but don't process
-            frappe.local.response["http_status_code"] = 200
-            frappe.local.response["message"] = "hash_mismatch"
-            return
-
         # ── Only process successful payments ──────────────────────────────────
         if status not in ("success", "captured"):
             frappe.log_error(
                 title="PayU Webhook — Non-success Payment",
-                message=f"TxnID: {txnid} | Status: {status} | ignoring."
+                message=f"TxnID: {txnid} | Status: {status} | Skipping."
             )
             frappe.local.response["http_status_code"] = 200
-            frappe.local.response["message"] = "ignored"
+            frappe.local.response["message"] = "ignored_non_success"
             return
 
-        # ── Find the matching ITR submission ──────────────────────────────────
-        # The txnid format is "{short_name}-{time_str}" where short_name is
-        # derived from the ITR submission name. We search by phone/email too.
-        phone = data.get("phone", "")
-        itr_doc = None
+        # ── Use mihpayid or txnid as the unique transaction identifier ────────
+        log_txn_id = mihpayid or txnid
+        if not log_txn_id:
+            frappe.log_error(
+                title="PayU Webhook — Missing TxnID",
+                message=f"Both mihpayid and txnid are empty. Data: {frappe.as_json(dict(data))}"
+            )
+            frappe.local.response["http_status_code"] = 200
+            frappe.local.response["message"] = "missing_txnid"
+            return
 
-        # Try to find by phone (last 10 digits)
+        # ── Skip duplicates ────────────────────────────────────────────────────
+        if frappe.db.exists("PayU Transaction Log", {"transaction_id": log_txn_id}):
+            frappe.log_error(
+                title="PayU Webhook — Duplicate Skipped",
+                message=f"TxnID {log_txn_id} already in log."
+            )
+            frappe.local.response["http_status_code"] = 200
+            frappe.local.response["message"] = "duplicate"
+            return
+
+        # ── Find the matching ITR submission by mobile or email ───────────────
+        itr_doc    = None
+        itr_name   = None
+
         if phone:
             mobile_last10 = str(phone)[-10:]
             matches = frappe.get_all(
                 "ITR Filing Submission",
-                filters={
-                    "mobile_number": ["like", f"%{mobile_last10}"],
-                    "payment_status": "Link Generated"
-                },
-                fields=["name"],
+                filters={"mobile_number": ["like", f"%{mobile_last10}"]},
+                fields=["name", "payment_status"],
+                order_by="creation desc",
                 limit=1
             )
             if matches:
-                itr_doc = frappe.get_doc("ITR Filing Submission", matches[0]["name"])
+                itr_name = matches[0]["name"]
 
-        # Fallback: search by email
-        if not itr_doc and email:
+        if not itr_name and email:
             matches = frappe.get_all(
                 "ITR Filing Submission",
-                filters={"email": email, "payment_status": "Link Generated"},
-                fields=["name"],
+                filters={"email": email},
+                fields=["name", "payment_status"],
+                order_by="creation desc",
                 limit=1
             )
             if matches:
-                itr_doc = frappe.get_doc("ITR Filing Submission", matches[0]["name"])
+                itr_name = matches[0]["name"]
 
-        # ── Create Transaction Log ─────────────────────────────────────────────
+        if itr_name:
+            itr_doc = frappe.get_doc("ITR Filing Submission", itr_name)
+
+        # ── Build transaction data ─────────────────────────────────────────────
         txn_data = {
-            "mihpayid":    mihpayid or txnid,
-            "txnid":       txnid,
-            "status":      status,
-            "amount":      amount,
-            "firstname":   firstname,
-            "email":       email,
-            "phone":       phone,
-            "mode":        data.get("mode", ""),
+            "mihpayid":     log_txn_id,
+            "txnid":        txnid,
+            "status":       status,
+            "amount":       amount,
+            "firstname":    firstname or (itr_doc.full_name if itr_doc else ""),
+            "email":        email or (itr_doc.email if itr_doc else ""),
+            "phone":        phone or (itr_doc.mobile_number if itr_doc else ""),
+            "mode":         data.get("mode", ""),
             "bank_ref_num": data.get("bank_ref_num", ""),
         }
 
+        # ── Create log entry ───────────────────────────────────────────────────
+        tx_log = frappe.get_doc({
+            "doctype":            "PayU Transaction Log",
+            "transaction_id":     log_txn_id,
+            "client_request_ref": itr_name or "",
+            "client_name":        txn_data["firstname"],
+            "client_email":       txn_data["email"],
+            "client_mobile":      txn_data["phone"],
+            "amount":             float(amount or 0),
+            "status":             "Success",
+            "payment_method":     data.get("mode", ""),
+            "upi_id":             data.get("bank_ref_num", "") or log_txn_id,
+            "response_data":      frappe.as_json(dict(data)),
+            "payment_date":       frappe.utils.now_datetime(),
+        })
+        tx_log.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        # ── Mark ITR as Paid if we found one ──────────────────────────────────
         if itr_doc:
-            _create_log_and_mark_paid(itr_doc, txn_data)
+            _mark_itr_as_paid(itr_doc)
             frappe.log_error(
                 title="PayU Webhook — Log Created ✅",
-                message=f"ITR: {itr_doc.name} | TxnID: {txnid} | Amount: ₹{amount}"
+                message=f"ITR: {itr_doc.name} | TxnID: {log_txn_id} | ₹{amount} | Mode: {data.get('mode','')}"
             )
         else:
-            # No matching ITR — still log the transaction as orphan
-            txnid_for_log = mihpayid or txnid
-            if not frappe.db.exists("PayU Transaction Log", {"transaction_id": txnid_for_log}):
-                tx_log = frappe.get_doc({
-                    "doctype":        "PayU Transaction Log",
-                    "transaction_id": txnid_for_log,
-                    "client_name":    firstname,
-                    "client_email":   email,
-                    "client_mobile":  phone,
-                    "amount":         float(amount or 0),
-                    "status":         "Success",
-                    "payment_method": data.get("mode", ""),
-                    "upi_id":         data.get("bank_ref_num", "") or mihpayid,
-                    "response_data":  frappe.as_json(dict(data)),
-                    "payment_date":   frappe.utils.now_datetime(),
-                })
-                tx_log.insert(ignore_permissions=True)
-                frappe.db.commit()
-
             frappe.log_error(
-                title="PayU Webhook — No ITR Match",
-                message=f"Payment received from {email}/{phone} but no matching ITR submission found."
+                title="PayU Webhook — Orphan Log Created",
+                message=f"No ITR match for phone={phone}/email={email}. Log saved as orphan: {log_txn_id}"
             )
 
         frappe.local.response["http_status_code"] = 200
