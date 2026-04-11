@@ -76,7 +76,7 @@ def _extract_reference_id_from_doc(doc):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def sync_payu_transactions(itr_submission_name):
+def sync_payu_transactions(itr_submission_name, mihpayid=None):
     """
     Fetches transaction details from PayU for a given ITR Filing Submission
     and creates/updates a PayU Transaction Log entry.
@@ -97,23 +97,22 @@ def sync_payu_transactions(itr_submission_name):
     if doc.payment_status == "Paid":
         return {"status": "already_paid", "message": "This submission is already marked as Paid."}
 
-    if not doc.payment_link:
-        return {"status": "no_link", "message": "No payment link found for this submission."}
-
-    # ── STRATEGY 1: Use the stored payment_link_txnid if available ──────────
-    # Check if we stored txnid separately on the doc (field added going forward)
-    stored_txnid = getattr(doc, "payment_link_txnid", None) or ""
-
-    # ── STRATEGY 2: Use PayU Payment Links Transactions API ─────────────────
-    # GET /payment-links/transactions?invoiceId={referenceId}
-    # This API uses OAuth Bearer token and merchantId header.
+    # ── STRATEGY 0: Direct lookup by PayU Payment ID (mihpayid) ─────────────
+    # This is the most reliable method — user provides the ID shown on PayU's
+    # success page (e.g. Payment ID: 28126138459)
     txn_data = None
 
-    if stored_txnid:
+    if mihpayid:
+        txn_data = _query_payu_by_mihpayid(str(mihpayid).strip(), settings)
+
+    # ── STRATEGY 1: Use the stored payment_link_txnid if available ──────────
+    stored_txnid = getattr(doc, "payment_link_txnid", None) or ""
+
+    if not txn_data and stored_txnid:
         txn_data = _query_payu_by_txnid(stored_txnid, settings)
 
-    if not txn_data:
-        # Fall back: query by date range (today), filter by client mobile/email
+    # ── STRATEGY 2: Use PayU Payment Links Transactions API ─────────────────
+    if not txn_data and doc.payment_link:
         txn_data = _query_payu_payment_link_txns_by_date(doc, settings)
 
     if not txn_data:
@@ -122,13 +121,13 @@ def sync_payu_transactions(itr_submission_name):
             message=(
                 f"ITR Submission: {itr_submission_name}\n"
                 f"Payment Link: {doc.payment_link}\n"
-                f"Stored TxnID: {stored_txnid or 'N/A'}\n"
+                f"PayU Payment ID (mihpayid) provided: {mihpayid or 'None'}\n"
                 f"PayU returned no matching transaction. Payment may be pending."
             )
         )
         return {
             "status": "not_found",
-            "message": "No completed transaction found at PayU. Payment may still be pending."
+            "message": "No completed transaction found at PayU. Please check the Payment ID and try again."
         }
 
     # ── Create / Update Transaction Log ─────────────────────────────────────
@@ -207,6 +206,68 @@ def _mark_itr_as_paid(doc):
             title="PayU Sync — Failed to Mark as Paid",
             message=frappe.get_traceback()
         )
+
+
+# ---------------------------------------------------------------------------
+# Helper: Query PayU by mihpayid using get_transaction_details postservice
+# ---------------------------------------------------------------------------
+
+def _query_payu_by_mihpayid(mihpayid, settings):
+    """
+    Looks up a transaction by PayU's own Payment ID (mihpayid).
+    This is the ID shown on PayU's payment success page.
+    Uses the 'get_transaction_details' postservice command.
+    Formula: sha512(key|command|var1|salt)
+    """
+    key     = settings["key"]
+    salt    = settings["salt"]
+    command = "get_transaction_details"
+    # var1 is today's date in format YYYY-MM-DD for date-based lookup
+    today = frappe.utils.today()  # YYYY-MM-DD
+
+    hash_str = f"{key}|{command}|{today}|{salt}"
+    api_hash = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
+
+    url = (
+        "https://test.payu.in/merchant/postservice.php?form=2"
+        if settings["is_sandbox"]
+        else "https://info.payu.in/merchant/postservice.php?form=2"
+    )
+
+    payload = {
+        "key":     key,
+        "command": command,
+        "var1":    today,
+        "hash":    api_hash
+    }
+
+    try:
+        resp = requests.post(url, data=payload, timeout=15)
+        result = resp.json()
+
+        frappe.log_error(
+            title="PayU Sync — get_transaction_details Response",
+            message=frappe.as_json(result)
+        )
+
+        # The response is a dict of transactions keyed by txnid
+        # Find the one matching our mihpayid
+        if result.get("status") == 1:
+            txn_details = result.get("transaction_details", {})
+            for txnid_key, details in txn_details.items():
+                if str(details.get("mihpayid", "")) == str(mihpayid):
+                    return details
+            # If only one transaction returned, return it (likely the one we want)
+            if len(txn_details) == 1:
+                only_txn = list(txn_details.values())[0]
+                if only_txn.get("status") in ("success", "captured"):
+                    return only_txn
+    except Exception as e:
+        frappe.log_error(
+            title="PayU Sync — get_transaction_details Error",
+            message=f"mihpayid: {mihpayid}\nError: {str(e)}"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -368,41 +429,318 @@ def _query_payu_payment_link_txns_by_date(doc, settings):
 @frappe.whitelist()
 def sync_all_pending_payments():
     """
-    Loops over all ITR Filing Submissions with payment_status = 'Link Generated'
-    and attempts to reconcile each one with PayU.
+    Called automatically every 30 minutes by Frappe Scheduler (hooks.py).
+    Also callable manually from Frappe → API.
 
-    Safe to call from Frappe Scheduler (e.g., hourly or daily job).
+    Strategy:
+    1. Fetch ALL of today's transactions from PayU using get_transaction_details
+    2. Get all ITR Filing Submissions with payment_status = "Link Generated"
+    3. Match each PayU transaction to an ITR submission by mobile/email/amount
+    4. Auto-create PayU Transaction Log entries and mark as Paid
+
     Returns a summary dict.
     """
-    if not frappe.has_permission("ITR Filing Submission", "write"):
-        frappe.throw("You do not have permission to run payment reconciliation.")
+    settings = get_payu_settings()
 
+    # ── Step 1: Fetch all today's PayU transactions in ONE API call ──────────
+    all_payu_txns = _fetch_all_todays_transactions(settings)
+
+    if not all_payu_txns:
+        frappe.log_error(
+            title="PayU Bulk Sync — No Transactions Today",
+            message="PayU returned 0 transactions for today. No payments to reconcile."
+        )
+        return {"checked": 0, "paid": 0, "pending": 0, "errors": 0}
+
+    # ── Step 2: Get all pending ITR submissions ───────────────────────────────
     pending = frappe.get_all(
         "ITR Filing Submission",
-        filters={"payment_status": "Link Generated", "payment_link": ["!=", ""]},
-        fields=["name", "full_name", "email", "mobile_number", "payment_link"],
-        limit=50  # Safety cap — avoid API rate limits
+        filters={"payment_status": "Link Generated"},
+        fields=["name", "full_name", "email", "mobile_number", "service_amount"],
+        limit=200
     )
 
     results = {"checked": len(pending), "paid": 0, "pending": 0, "errors": 0}
 
+    # ── Step 3: Match and reconcile ───────────────────────────────────────────
     for record in pending:
-        try:
-            result = sync_payu_transactions(record["name"])
-            if result.get("is_paid"):
+        matched_txn = _match_txn_to_itr(record, all_payu_txns)
+        if matched_txn:
+            try:
+                doc = frappe.get_doc("ITR Filing Submission", record["name"])
+                _create_log_and_mark_paid(doc, matched_txn)
                 results["paid"] += 1
-            else:
-                results["pending"] += 1
-        except Exception as e:
-            results["errors"] += 1
-            frappe.log_error(
-                title="PayU Bulk Sync Error",
-                message=f"Failed for {record['name']}: {str(e)}"
-            )
+            except Exception:
+                results["errors"] += 1
+                frappe.log_error(
+                    title="PayU Bulk Sync — Error",
+                    message=f"Failed for {record['name']}:\n{frappe.get_traceback()}"
+                )
+        else:
+            results["pending"] += 1
 
     frappe.log_error(
-        title="PayU Bulk Sync Complete",
+        title="PayU Bulk Sync — Complete",
         message=frappe.as_json(results)
     )
-
     return results
+
+
+def _fetch_all_todays_transactions(settings):
+    """
+    Fetches all of today's PayU transactions using the get_transaction_details
+    postservice API. Returns a list of transaction dicts (only successful ones).
+    """
+    key     = settings["key"]
+    salt    = settings["salt"]
+    command = "get_transaction_details"
+    today   = frappe.utils.today()  # YYYY-MM-DD
+
+    hash_str = f"{key}|{command}|{today}|{salt}"
+    api_hash = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
+
+    url = (
+        "https://test.payu.in/merchant/postservice.php?form=2"
+        if settings["is_sandbox"]
+        else "https://info.payu.in/merchant/postservice.php?form=2"
+    )
+
+    payload = {
+        "key":     key,
+        "command": command,
+        "var1":    today,
+        "hash":    api_hash
+    }
+
+    try:
+        resp = requests.post(url, data=payload, timeout=20)
+        result = resp.json()
+
+        frappe.log_error(
+            title="PayU Bulk Sync — get_transaction_details",
+            message=frappe.as_json(result)
+        )
+
+        if result.get("status") == 1:
+            txn_details = result.get("transaction_details", {})
+            # Return only successful transactions as a flat list
+            return [
+                txn for txn in txn_details.values()
+                if txn.get("status") in ("success", "captured")
+            ]
+    except Exception:
+        frappe.log_error(
+            title="PayU Bulk Sync — API Error",
+            message=frappe.get_traceback()
+        )
+    return []
+
+
+def _match_txn_to_itr(record, payu_txns):
+    """
+    Tries to match a PayU transaction to an ITR Filing Submission.
+    Matches by mobile number (last 10 digits) OR email address.
+    """
+    mobile_last10 = str(record.get("mobile_number") or "")[-10:]
+    email = str(record.get("email") or "").lower().strip()
+    amount = float(record.get("service_amount") or 0)
+
+    for txn in payu_txns:
+        txn_mobile = str(txn.get("phone") or txn.get("mobile") or "")[-10:]
+        txn_email  = str(txn.get("email") or "").lower().strip()
+        txn_amount = float(txn.get("amount") or 0)
+
+        # Primary match: mobile number
+        if mobile_last10 and txn_mobile and mobile_last10 == txn_mobile:
+            return txn
+        # Secondary match: email
+        if email and txn_email and email == txn_email:
+            return txn
+
+    return None
+
+
+def _create_log_and_mark_paid(doc, txn_data):
+    """
+    Creates a PayU Transaction Log entry and marks the ITR submission as Paid.
+    Skips if the transaction is already logged.
+    """
+    txnid   = txn_data.get("mihpayid") or txn_data.get("txnid") or ""
+    status  = str(txn_data.get("status", "")).lower()
+    is_paid = status in ("success", "captured")
+
+    # Skip duplicates
+    if frappe.db.exists("PayU Transaction Log", {"transaction_id": txnid}):
+        if is_paid:
+            _mark_itr_as_paid(doc)
+        return
+
+    tx_log = frappe.get_doc({
+        "doctype":            "PayU Transaction Log",
+        "transaction_id":     txnid,
+        "client_request_ref": doc.name,
+        "client_name":        txn_data.get("firstname", "") or doc.full_name or "",
+        "client_mobile":      txn_data.get("phone", "") or doc.mobile_number or "",
+        "client_email":       txn_data.get("email", "") or doc.email or "",
+        "amount":             txn_data.get("amount") or doc.service_amount or 0,
+        "status":             "Success" if is_paid else "Failed",
+        "payment_method":     txn_data.get("mode", "") or "",
+        "upi_id":             txn_data.get("bank_ref_num", "") or txn_data.get("mihpayid", ""),
+        "response_data":      frappe.as_json(txn_data),
+        "payment_date":       frappe.utils.now_datetime(),
+    })
+    tx_log.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    if is_paid:
+        _mark_itr_as_paid(doc)
+
+
+# ---------------------------------------------------------------------------
+# PayU Webhook Handler — called instantly when any payment completes
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist(allow_guest=True)
+def handle_payu_webhook():
+    """
+    PayU calls this endpoint (server-to-server POST) immediately when a
+    payment is completed via any Payment Link.
+
+    Configure in PayU Merchant Dashboard:
+      Developer → Webhooks → Create Webhook
+      URL: https://aionion-itr.m.frappe.cloud/api/method/payu_frappe.payment_reconcile.handle_payu_webhook
+      Events: payment_success, payment_failure
+
+    PayU sends fields: txnid, status, amount, firstname, email, phone,
+                       mihpayid, mode, bank_ref_num, hash, key, salt, ...
+    """
+    try:
+        data   = frappe.request.form
+        key    = data.get("key", "")
+        txnid  = data.get("txnid", "")
+        amount = data.get("amount", "")
+        email  = data.get("email", "")
+        status = data.get("status", "").lower()
+        mihpayid = data.get("mihpayid", "")
+        payu_hash = data.get("hash", "")
+
+        frappe.log_error(
+            title="PayU Webhook — Received",
+            message=frappe.as_json(dict(data))
+        )
+
+        # ── Verify PayU hash for security ─────────────────────────────────────
+        # PayU webhook hash: sha512(salt|status|||amount|email|firstname|txnid|key)
+        settings = get_payu_settings()
+        salt     = settings["salt"]
+        firstname = data.get("firstname", "")
+
+        hash_str = f"{salt}|{status}|||{amount}|{email}|{firstname}|{txnid}|{key}"
+        expected_hash = hashlib.sha512(hash_str.encode("utf-8")).hexdigest()
+
+        if expected_hash != payu_hash:
+            frappe.log_error(
+                title="PayU Webhook — Hash Mismatch (possible forgery)",
+                message=f"Expected: {expected_hash}\nReceived: {payu_hash}"
+            )
+            # Return 200 to stop PayU from retrying, but don't process
+            frappe.local.response["http_status_code"] = 200
+            frappe.local.response["message"] = "hash_mismatch"
+            return
+
+        # ── Only process successful payments ──────────────────────────────────
+        if status not in ("success", "captured"):
+            frappe.log_error(
+                title="PayU Webhook — Non-success Payment",
+                message=f"TxnID: {txnid} | Status: {status} | ignoring."
+            )
+            frappe.local.response["http_status_code"] = 200
+            frappe.local.response["message"] = "ignored"
+            return
+
+        # ── Find the matching ITR submission ──────────────────────────────────
+        # The txnid format is "{short_name}-{time_str}" where short_name is
+        # derived from the ITR submission name. We search by phone/email too.
+        phone = data.get("phone", "")
+        itr_doc = None
+
+        # Try to find by phone (last 10 digits)
+        if phone:
+            mobile_last10 = str(phone)[-10:]
+            matches = frappe.get_all(
+                "ITR Filing Submission",
+                filters={
+                    "mobile_number": ["like", f"%{mobile_last10}"],
+                    "payment_status": "Link Generated"
+                },
+                fields=["name"],
+                limit=1
+            )
+            if matches:
+                itr_doc = frappe.get_doc("ITR Filing Submission", matches[0]["name"])
+
+        # Fallback: search by email
+        if not itr_doc and email:
+            matches = frappe.get_all(
+                "ITR Filing Submission",
+                filters={"email": email, "payment_status": "Link Generated"},
+                fields=["name"],
+                limit=1
+            )
+            if matches:
+                itr_doc = frappe.get_doc("ITR Filing Submission", matches[0]["name"])
+
+        # ── Create Transaction Log ─────────────────────────────────────────────
+        txn_data = {
+            "mihpayid":    mihpayid or txnid,
+            "txnid":       txnid,
+            "status":      status,
+            "amount":      amount,
+            "firstname":   firstname,
+            "email":       email,
+            "phone":       phone,
+            "mode":        data.get("mode", ""),
+            "bank_ref_num": data.get("bank_ref_num", ""),
+        }
+
+        if itr_doc:
+            _create_log_and_mark_paid(itr_doc, txn_data)
+            frappe.log_error(
+                title="PayU Webhook — Log Created ✅",
+                message=f"ITR: {itr_doc.name} | TxnID: {txnid} | Amount: ₹{amount}"
+            )
+        else:
+            # No matching ITR — still log the transaction as orphan
+            txnid_for_log = mihpayid or txnid
+            if not frappe.db.exists("PayU Transaction Log", {"transaction_id": txnid_for_log}):
+                tx_log = frappe.get_doc({
+                    "doctype":        "PayU Transaction Log",
+                    "transaction_id": txnid_for_log,
+                    "client_name":    firstname,
+                    "client_email":   email,
+                    "client_mobile":  phone,
+                    "amount":         float(amount or 0),
+                    "status":         "Success",
+                    "payment_method": data.get("mode", ""),
+                    "upi_id":         data.get("bank_ref_num", "") or mihpayid,
+                    "response_data":  frappe.as_json(dict(data)),
+                    "payment_date":   frappe.utils.now_datetime(),
+                })
+                tx_log.insert(ignore_permissions=True)
+                frappe.db.commit()
+
+            frappe.log_error(
+                title="PayU Webhook — No ITR Match",
+                message=f"Payment received from {email}/{phone} but no matching ITR submission found."
+            )
+
+        frappe.local.response["http_status_code"] = 200
+        frappe.local.response["message"] = "ok"
+
+    except Exception:
+        frappe.log_error(
+            title="PayU Webhook — Exception",
+            message=frappe.get_traceback()
+        )
+        frappe.local.response["http_status_code"] = 200
+        frappe.local.response["message"] = "error_logged"

@@ -293,12 +293,41 @@ function open_payu_dialog(frm) {
     // --- Action: Sync Payment Status from PayU ---
     dialog.$wrapper.find('#payu-action-sync').on('click', async function() {
         dialog.hide();
-        frappe.confirm(
-            `Check PayU for completed payment on <b>${frm.doc.name}</b> and update the Transaction Log?`,
-            async function() {
+
+        // Show a small dialog to enter the PayU Payment ID
+        const sync_dialog = new frappe.ui.Dialog({
+            title: '🔄 Sync Payment from PayU',
+            fields: [
+                {
+                    fieldname: 'payment_id_html',
+                    fieldtype: 'HTML',
+                    options: `
+                        <div style="padding: 4px 0 12px;">
+                            <p style="font-size:13px;color:#4a5568;margin:0 0 4px;">
+                                After payment, PayU shows a <b>Payment ID</b> on their success page.
+                            </p>
+                            <p style="font-size:12px;color:#718096;margin:0;">
+                                Example: <code style="background:#f0f4ff;padding:2px 6px;border-radius:4px;">28126138459</code>
+                            </p>
+                        </div>`
+                },
+                {
+                    fieldname: 'mihpayid',
+                    fieldtype: 'Data',
+                    label: 'PayU Payment ID',
+                    placeholder: 'Paste the Payment ID from PayU success page',
+                    description: 'Leave blank to search automatically by date'
+                }
+            ],
+            primary_action_label: '🔄 Sync Now',
+            primary_action: async function(values) {
+                sync_dialog.hide();
                 const r = await frappe.call({
                     method: 'payu_frappe.payment_reconcile.sync_payu_transactions',
-                    args: { itr_submission_name: frm.doc.name },
+                    args: {
+                        itr_submission_name: frm.doc.name,
+                        mihpayid: values.mihpayid || null
+                    },
                     freeze: true,
                     freeze_message: __('Checking PayU for transaction…'),
                 });
@@ -318,7 +347,7 @@ function open_payu_dialog(frm) {
                 } else if (result.status === 'not_found') {
                     frappe.msgprint({
                         title: __('No Transaction Found'),
-                        message: result.message + '<br><br>The payment may still be pending or the user has not completed the payment yet.',
+                        message: (result.message || '') + '<br><br>Please ensure you entered the correct Payment ID from PayU\'s success page.',
                         indicator: 'orange'
                     });
                 } else {
@@ -329,8 +358,10 @@ function open_payu_dialog(frm) {
                     });
                 }
             }
-        );
+        });
+        sync_dialog.show();
     });
+
 } // end open_payu_dialog
 
 

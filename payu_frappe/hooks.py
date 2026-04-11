@@ -51,3 +51,15 @@ permission_query_conditions = {
 has_permission = {
     "ITR Filing Submission": "payu_frappe.api.has_custom_permission"
 }
+
+# -------------------------------------------------------------------------
+# Scheduled Jobs (Automatic PayU Payment Reconciliation)
+# -------------------------------------------------------------------------
+scheduler_events = {
+    # Runs every 30 minutes — auto-creates Transaction Logs for paid submissions
+    "cron": {
+        "*/30 * * * *": [
+            "payu_frappe.payment_reconcile.sync_all_pending_payments"
+        ]
+    }
+}
