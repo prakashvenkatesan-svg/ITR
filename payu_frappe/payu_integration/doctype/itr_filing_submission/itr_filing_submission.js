@@ -194,6 +194,9 @@ function open_payu_dialog(frm) {
     const copy_card_class = 'payu-action-card';
     const copy_hint = has_link ? 'Click to copy the existing link' : 'Will generate a new link first';
 
+    const sync_card_class = is_paid ? 'payu-action-card disabled' : 'payu-action-card';
+    const sync_hint = is_paid ? 'Payment already completed' : 'Check PayU and update payment status here';
+
     const action_html = `
         ${action_css}
         <div class="payu-actions-container">
@@ -213,8 +216,17 @@ function open_payu_dialog(frm) {
                 </div>
                 <span class="payu-action-badge" style="background:#38a169;">Copy</span>
             </div>
+            <div class="${sync_card_class}" id="payu-action-sync">
+                <div class="payu-action-icon">🔄</div>
+                <div class="payu-action-label">
+                    <strong>Sync Payment Status from PayU</strong>
+                    <span>${sync_hint}</span>
+                </div>
+                <span class="payu-action-badge" style="background:#d97706;">Sync</span>
+            </div>
         </div>
     `;
+
 
     dialog.fields_dict.actions_html.$wrapper.html(action_html);
     dialog.show();
@@ -277,7 +289,50 @@ function open_payu_dialog(frm) {
             frappe.msgprint({ title: 'Copy failed', message: `Please copy manually:<br><br><a href="${link}" target="_blank">${link}</a>`, indicator: 'orange' });
         });
     });
-}
+
+    // --- Action: Sync Payment Status from PayU ---
+    dialog.$wrapper.find('#payu-action-sync').on('click', async function() {
+        dialog.hide();
+        frappe.confirm(
+            `Check PayU for completed payment on <b>${frm.doc.name}</b> and update the Transaction Log?`,
+            async function() {
+                const r = await frappe.call({
+                    method: 'payu_frappe.payment_reconcile.sync_payu_transactions',
+                    args: { itr_submission_name: frm.doc.name },
+                    freeze: true,
+                    freeze_message: __('Checking PayU for transaction…'),
+                });
+                const result = r.message || {};
+                if (result.status === 'success') {
+                    frappe.msgprint({
+                        title: __('✅ Payment Confirmed!'),
+                        message: result.message,
+                        indicator: 'green'
+                    });
+                    frm.reload_doc();
+                } else if (result.status === 'already_paid') {
+                    frappe.show_alert({ message: __('Already marked as Paid.'), indicator: 'blue' });
+                } else if (result.status === 'already_logged') {
+                    frappe.msgprint({ title: __('Already Logged'), message: result.message, indicator: 'blue' });
+                    frm.reload_doc();
+                } else if (result.status === 'not_found') {
+                    frappe.msgprint({
+                        title: __('No Transaction Found'),
+                        message: result.message + '<br><br>The payment may still be pending or the user has not completed the payment yet.',
+                        indicator: 'orange'
+                    });
+                } else {
+                    frappe.msgprint({
+                        title: __('Sync Result'),
+                        message: result.message || JSON.stringify(result),
+                        indicator: 'red'
+                    });
+                }
+            }
+        );
+    });
+} // end open_payu_dialog
+
 
 // --- WhatsApp Popup Dialog Functionality ---
 function open_whatsapp_dialog(frm) {
