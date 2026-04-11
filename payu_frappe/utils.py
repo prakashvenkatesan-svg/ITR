@@ -37,9 +37,10 @@ def get_payu_settings():
         return result
 
 
-def get_payu_access_token(settings):
+def get_payu_access_token(settings, scope="create_payment_links"):
     """
     Obtains the OAuth 2.0 access token using client_credentials grant.
+    Default scope is 'create_payment_links', but can be overridden.
     """
     import requests
     
@@ -48,7 +49,8 @@ def get_payu_access_token(settings):
     payload = {
         "grant_type": "client_credentials",
         "client_id": settings.get("client_id"),
-        "client_secret": settings.get("client_secret")
+        "client_secret": settings.get("client_secret"),
+        "scope": scope
     }
     
     headers = {

@@ -278,7 +278,9 @@ def _query_payu_payment_link_txns_by_date(doc, settings):
     Falls back to get_transaction_details postservice API.
     """
     try:
-        access_token = get_payu_access_token(settings)
+        # Request access token with a broad/view scope.
+        # PayU documentation is sometimes vague, but 'view_payment_links' or omitting scope (if enabled) works for fetching.
+        access_token = get_payu_access_token(settings, scope="view_payment_links")
     except Exception:
         frappe.log_error(
             title="PayU Sync — Token Error",
