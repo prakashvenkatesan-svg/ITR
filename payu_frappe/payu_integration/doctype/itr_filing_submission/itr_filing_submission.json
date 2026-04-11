@@ -136,8 +136,8 @@
         {"fieldname": "demat_statement_attachment", "fieldtype": "Attach", "label": "Demat Statement Attachment", "read_only": 1},
 
         {"fieldname": "section_9_payment", "fieldtype": "Section Break", "label": "Payment & Processing"},
-        {"fieldname": "service_amount", "fieldtype": "Select", "label": "Service Amount (₹)",
-            "options": "1000\n2000\n3000\n4000\n5000\n6000\n7000\n8000\n9000\n10000\nCustom"},
+        {"fieldname": "service_amount", "fieldtype": "Data", "label": "Service Amount (₹)",
+            "options": "1000\n2000\n3000\n4000\n5000\n6000\n7000\n8000\n9000\n10000"},
         {"fieldname": "payment_amount", "fieldtype": "Int", "label": "Payment Amount (computed)", "read_only": 1},
         {"fieldname": "payment_status", "fieldtype": "Select", "label": "Payment Status",
             "options": "Pending\nLink Generated\nSuccess\nFailed", "read_only": 1, "in_list_view": 0},
@@ -146,7 +146,7 @@
 
     "index_pages": [],
     "links": [],
-    "modified": "2026-04-11 10:00:00.000000",
+    "modified": "2026-04-11 11:30:00.000000",
     "modified_by": "Administrator",
     "module": "PayU Integration",
     "name": "ITR Filing Submission",
