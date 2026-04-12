@@ -19,7 +19,17 @@ def submit_itr_details():
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
     }
-    
+
+    # --- Submission Pause Gate ---
+    # Check this BEFORE any data parsing so even direct API calls are blocked.
+    _settings = frappe.get_single("PayU Settings")
+    if _settings.get("is_submission_paused"):
+        return {
+            "success": False,
+            "paused": True,
+            "message": _settings.get("submission_paused_message") or "ITR form submissions are currently paused. Please check back later."
+        }
+
     try:
         data = {}
 
@@ -388,6 +398,25 @@ def submit_client_requirements():
 
     """Alias kept for backward compatibility with older React code."""
     return submit_itr_details()
+
+
+@frappe.whitelist(allow_guest=True)
+def get_submission_status():
+    """
+    Called by the React ITR form on page load and before submit.
+    Returns whether submissions are currently paused and the message to display.
+    URL: GET /api/method/payu_frappe.api.get_submission_status
+    """
+    frappe.response["headers"] = {
+        "Access-Control-Allow-Origin": "https://aionionadvisory.com",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+    }
+    settings = frappe.get_single("PayU Settings")
+    return {
+        "paused": bool(settings.get("is_submission_paused")),
+        "message": settings.get("submission_paused_message") or "ITR form submissions are currently paused. Please check back later."
+    }
 
 
 # ---------------------------------------------------------------------------

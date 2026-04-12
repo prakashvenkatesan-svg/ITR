@@ -11,7 +11,10 @@
         "client_secret",
         "is_sandbox",
         "sandbox_url",
-        "production_url"
+        "production_url",
+        "submission_control_section",
+        "is_submission_paused",
+        "submission_paused_message"
     ],
     "fields": [
         {"fieldname": "merchant_id", "fieldtype": "Data", "label": "Merchant ID"},
@@ -23,7 +26,13 @@
         {"fieldname": "sandbox_url", "fieldtype": "Data", "label": "Sandbox URL",
             "default": "https://test.payu.in/_payment", "read_only": 1},
         {"fieldname": "production_url", "fieldtype": "Data", "label": "Production URL",
-            "default": "https://secure.payu.in/_payment", "read_only": 1}
+            "default": "https://secure.payu.in/_payment", "read_only": 1},
+        {"fieldname": "submission_control_section", "fieldtype": "Section Break", "label": "Form Submission Control"},
+        {"fieldname": "is_submission_paused", "fieldtype": "Check", "label": "Pause ITR Submissions", "default": "0",
+            "description": "When checked, the public ITR filing form will be blocked and a message shown to users."},
+        {"fieldname": "submission_paused_message", "fieldtype": "Small Text", "label": "Message Shown to Users",
+            "depends_on": "eval:doc.is_submission_paused==1",
+            "default": "ITR form submissions are currently paused. Please check back later."}
     ],
     "issingle": 1,
     "modified": "2026-03-17 10:00:00.000000",
