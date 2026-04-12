@@ -117,6 +117,91 @@ frappe.ui.form.on('ITR Filing Submission', {
                 }
             }, 500);
         }
+
+        // --- 💳 Payment History Button ---
+        // Visible to all logged-in users on saved records
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('💳 Payment History'), function() {
+                frappe.call({
+                    method: 'frappe.client.get_list',
+                    args: {
+                        doctype: 'PayU Transaction Log',
+                        filters: { client_request_ref: frm.doc.name },
+                        fields: ['transaction_id', 'amount', 'status', 'payment_method', 'upi_id', 'payment_date'],
+                        order_by: 'payment_date desc',
+                        limit: 20
+                    },
+                    freeze: true,
+                    freeze_message: __('Loading payment history…'),
+                    callback(r) {
+                        const txns = r.message || [];
+
+                        if (txns.length === 0) {
+                            frappe.msgprint({
+                                title: __('💳 Payment History'),
+                                message: `
+                                    <div style="text-align:center;padding:30px;color:#888;">
+                                        <i class="fa fa-credit-card" style="font-size:40px;margin-bottom:12px;display:block;"></i>
+                                        <p style="font-size:14px;">No payment transactions recorded yet for this submission.</p>
+                                        <p style="font-size:12px;color:#aaa;">Payment transactions will appear here once the client completes payment via PayU.</p>
+                                    </div>`,
+                                indicator: 'orange'
+                            });
+                            return;
+                        }
+
+                        const statusBadge = (s) => {
+                            const map = {
+                                'Success': '#22c55e',
+                                'Failed':  '#ef4444',
+                                'Pending': '#f59e0b'
+                            };
+                            const color = map[s] || '#6b7280';
+                            const icon  = s === 'Success' ? '✅' : s === 'Failed' ? '❌' : '⏳';
+                            return `<span style="background:${color};color:#fff;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;">${icon} ${s}</span>`;
+                        };
+
+                        const rows = txns.map(t => `
+                            <tr style="border-bottom:1px solid #f0f0f0;">
+                                <td style="padding:10px 12px;font-family:monospace;font-size:12px;color:#374151;">${t.transaction_id || '—'}</td>
+                                <td style="padding:10px 12px;font-weight:600;color:#111827;">₹${parseFloat(t.amount || 0).toLocaleString('en-IN')}</td>
+                                <td style="padding:10px 12px;">${statusBadge(t.status || 'Pending')}</td>
+                                <td style="padding:10px 12px;color:#6b7280;font-size:12px;">${t.payment_method || '—'}</td>
+                                <td style="padding:10px 12px;color:#6b7280;font-size:12px;">${t.upi_id || '—'}</td>
+                                <td style="padding:10px 12px;color:#6b7280;font-size:12px;">${t.payment_date ? frappe.datetime.str_to_user(t.payment_date) : '—'}</td>
+                            </tr>`).join('');
+
+                        const html = `
+                            <div style="font-family:sans-serif;">
+                                <p style="font-size:13px;color:#6b7280;margin-bottom:12px;">
+                                    PayU transaction records linked to <strong>${frm.doc.name}</strong>
+                                    (${frm.doc.full_name || ''})
+                                </p>
+                                <table width="100%" style="border-collapse:collapse;font-size:13px;">
+                                    <thead>
+                                        <tr style="background:#f8f9fa;color:#444;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">
+                                            <th style="padding:8px 12px;text-align:left;">Transaction ID</th>
+                                            <th style="padding:8px 12px;text-align:left;">Amount</th>
+                                            <th style="padding:8px 12px;text-align:left;">Status</th>
+                                            <th style="padding:8px 12px;text-align:left;">Method</th>
+                                            <th style="padding:8px 12px;text-align:left;">UPI / Bank Ref</th>
+                                            <th style="padding:8px 12px;text-align:left;">Payment Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>`;
+
+                        frappe.msgprint({
+                            title: __('💳 Payment History — ' + frm.doc.name),
+                            message: html,
+                            indicator: txns.some(t => t.status === 'Success') ? 'green' : 'orange',
+                            wide: true
+                        });
+                    }
+                });
+            });
+        }
     }
 });
 
