@@ -645,21 +645,42 @@ def verify_payment_with_payu_api(txnid, settings):
 # padmapriya reviews and moves the stage to "In Progress" to trigger RM assignment.
 INTAKE_USER = "padmapriya.s@aionioncapital.com"
 
-# The RM pool eligible for workload-based distribution (when stage moves to In Progress)
-RM_POOL = [
-    "srinivasan.hs@aionioncapital.com",
-    "umeshkumar.s@aionioncapital.com",
-    "bagiayalakshmi.p@aionioncapital.com",
-    "abdulrahim.p@aionioncapital.com",
-    "nethaji.a@aionioncapital.com",
-    "meenatshisundharesh.vm@aionioncapital.com",
-]
+# Frappe Role name that marks a user as an active Regional Manager.
+# To add a new RM: go to User List → open user → assign this role.
+# To remove an RM from the pool: revoke this role from their User record.
+RM_ROLE = "ITR Regional Manager"
 
 # Users completely excluded from the RM pool — developers/admins who must never own client records
 EXCLUDED_USERS = {
     "prakash.venkatesan@aionioncapital.com",
     "Administrator",
 }
+
+
+def _get_rm_pool():
+    """
+    Dynamically build the RM pool from all ENABLED Frappe users who have the
+    'ITR Regional Manager' role, excluding INTAKE_USER and EXCLUDED_USERS.
+
+    This means adding/removing an RM never requires a code change:
+      → Go to Frappe Desk → User List → open user → add/remove role 'ITR Regional Manager'
+    """
+    role_users = frappe.get_all(
+        "Has Role",
+        filters={"role": RM_ROLE, "parenttype": "User"},
+        fields=["parent as user"]
+    )
+    pool = []
+    for row in role_users:
+        email = row.get("user") or row.get("parent") or ""
+        if not email:
+            continue
+        if email == INTAKE_USER or email in EXCLUDED_USERS:
+            continue
+        # Only include accounts that are enabled (not disabled/locked)
+        if frappe.db.get_value("User", email, "enabled"):
+            pool.append(email)
+    return pool
 
 
 def _get_prior_rm_for_pan(pan):
@@ -687,15 +708,23 @@ def _get_prior_rm_for_pan(pan):
 
 def _get_least_loaded_rm():
     """
-    From the RM_POOL, return the RM email with the fewest currently active
-    (non-Completed) ITR Filing Submission records assigned to them.
-    Falls back to the first RM in the pool if pool is empty.
+    Return the RM email (from the dynamic role-based pool) with the fewest
+    currently active (non-Completed) ITR Filing Submission records.
+    Returns None if the pool is empty.
     """
-    if not RM_POOL:
+    pool = _get_rm_pool()
+    if not pool:
+        frappe.log_error(
+            title="RM Pool Empty",
+            message=(
+                f"No users found with role '{RM_ROLE}'. "
+                "Please assign this role to at least one active Regional Manager in the User list."
+            )
+        )
         return None
 
     workload = {}
-    for rm in RM_POOL:
+    for rm in pool:
         count = frappe.db.count(
             "ITR Filing Submission",
             {"regional_manager": rm, "stage_status": ["not in", ["Completed"]]}
@@ -861,14 +890,16 @@ def reassign_to_rm_on_in_progress(doc, method):
 @frappe.whitelist()
 def get_rm_workload():
     """
-    Returns current workload for each RM in the pool.
+    Returns current workload for each RM in the dynamic role-based pool.
     Used by the 'RM Workload' button in the form view so padmapriya / admins
     can see who will be auto-assigned before setting In Progress.
 
+    Pool = all enabled users with the 'ITR Regional Manager' Frappe role.
     Active record = any record NOT in 'Completed' stage.
     """
+    pool = _get_rm_pool()
     workload = []
-    for rm in RM_POOL:
+    for rm in pool:
         active_count = frappe.db.count(
             "ITR Filing Submission",
             {"regional_manager": rm, "stage_status": ["not in", ["Completed"]]}
