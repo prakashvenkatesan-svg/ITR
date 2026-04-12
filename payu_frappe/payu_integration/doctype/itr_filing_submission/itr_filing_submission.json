@@ -86,7 +86,7 @@
         {"fieldname": "regional_manager", "fieldtype": "Link", "label": "Regional Manager ID", "options": "User", "in_list_view": 0},
         {"fieldname": "regional_manager_name", "fieldtype": "Data", "label": "Regional Manager", "fetch_from": "regional_manager.full_name", "in_list_view": 1},
         {"fieldname": "stage_status", "fieldtype": "Select", "label": "Stage Status", "in_list_view": 1,
-            "options": "New Client\nExisting Client\nLead Generated\nIn Progress\nPending\nReceived\nCompleted", "default": "New Client"},
+            "options": "New Client\nExisting Client\nIn Progress\nPayment Pending\nDocument Pending\nClarification Pending\nPayment Completed\nCompleted", "default": "New Client"},
 
         {"fieldname": "section_3_portal", "fieldtype": "Section Break", "label": "Portal Access"},
         {"fieldname": "previously_filed_with_aionion", "fieldtype": "Select", "label": "Previously Filed with Aionion?", "options": "No\nYes"},

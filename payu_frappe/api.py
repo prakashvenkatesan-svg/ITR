@@ -553,37 +553,76 @@ def handle_callback():
     txnid = data.get("txnid") or data.get("mihpayid")
     request_ref = data.get("request_ref") or data.get("udf1")
 
+    # --- Auto-resolve request_ref if missing ---
+    # For PayU Payment Links the referenceId we sent (which contains the submission name)
+    # sometimes comes back as 'field1', 'udf1', or we can find it from the transaction log
+    # by matching referenceId stored in response_data.
+    if not request_ref:
+        # Try other common fields PayU may return
+        request_ref = (
+            data.get("field1") or
+            data.get("productinfo") or
+            data.get("referenceId")
+        )
+        # If still empty, search for a submission by matching the txnid prefix
+        # (txnid format we set: {short_name}-{timestamp}, short_name from doc.name)
+        if not request_ref and txnid:
+            candidate = frappe.db.get_value(
+                "PayU Transaction Log",
+                {"transaction_id": txnid},
+                "client_request_ref"
+            )
+            if candidate:
+                request_ref = candidate
+
+    txn_details_from_api = {}
     api_verified = False
-    
+
     if txnid:
-        # Ground Truth check via Server to Server API (this works for both link and checkout IDs)
+        # Ground Truth check via Server to Server API
         api_status = verify_payment_with_payu_api(txnid, settings)
         if api_status and api_status.get("status") == 1:
-            txn_details = api_status.get("transaction_details", {}).get(txnid, {})
-            # PayU might return "status": "success" or "transaction_status": "success"
-            if txn_details.get("status") == "success":
+            txn_details_from_api = api_status.get("transaction_details", {}).get(txnid, {})
+            if txn_details_from_api.get("status") == "success":
                 api_verified = True
 
-    # Log the attempt
-    try:
-        tx_log = frappe.get_doc({
-            "doctype": "PayU Transaction Log",
-            "transaction_id": txnid,
-            "client_request_ref": request_ref,
-            "client_name": data.get("firstname", ""),
-            "client_mobile": data.get("phone", ""),
-            "client_email": data.get("email", ""),
-            "amount": data.get("amount"),
-            "status": "Success" if api_verified else "Failed",
-            "payment_method": data.get("mode", ""),
-            "upi_id": data.get("bank_ref_num", data.get("mihpayid", "")),
-            "response_data": frappe.as_json(dict(data)),
-            "payment_date": frappe.utils.now_datetime(),
-        })
-        tx_log.insert(ignore_permissions=True)
-        frappe.db.commit()
-    except Exception as e:
-        frappe.log_error(f"PayU Log Error: {str(e)}", "PayU Integration")
+            # Extra attempt: pull request_ref from the verified transaction's udf/reference fields
+            if not request_ref:
+                request_ref = (
+                    txn_details_from_api.get("udf1") or
+                    txn_details_from_api.get("field1") or
+                    txn_details_from_api.get("productinfo")
+                )
+
+    # Log the attempt (only if not already logged for this txnid)
+    existing_log = frappe.db.exists("PayU Transaction Log", {"transaction_id": txnid}) if txnid else None
+    if not existing_log:
+        try:
+            tx_log = frappe.get_doc({
+                "doctype": "PayU Transaction Log",
+                "transaction_id": txnid,
+                "client_request_ref": request_ref,
+                "client_name": data.get("firstname", "") or txn_details_from_api.get("firstname", ""),
+                "client_mobile": data.get("phone", "") or txn_details_from_api.get("phone", ""),
+                "client_email": data.get("email", "") or txn_details_from_api.get("email", ""),
+                "amount": data.get("amount") or txn_details_from_api.get("amt"),
+                "status": "Success" if api_verified else "Failed",
+                "payment_method": data.get("mode", "") or txn_details_from_api.get("mode", ""),
+                "upi_id": data.get("bank_ref_num", data.get("mihpayid", "")),
+                "response_data": frappe.as_json(dict(data)),
+                "payment_date": frappe.utils.now_datetime(),
+            })
+            tx_log.insert(ignore_permissions=True)
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(f"PayU Log Error: {str(e)}", "PayU Integration")
+    elif request_ref:
+        # Log already exists — at least update the client_request_ref if it was missing
+        try:
+            frappe.db.set_value("PayU Transaction Log", existing_log, "client_request_ref", request_ref)
+            frappe.db.commit()
+        except Exception:
+            pass
 
     # Final Decision based strictly on Server API ground truth
     if api_verified:
@@ -596,9 +635,70 @@ def handle_callback():
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-success"
     else:
-        # If ground truth failed, go to failure.
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = "/payment-failed"
+
+
+@frappe.whitelist()
+def link_payment_to_submission(transaction_id, submission_name):
+    """
+    Manually link a PayU Transaction Log entry to an ITR Filing Submission.
+    Used from the Payment History popup when auto-link fails (e.g. PayU Payment Link flow).
+    Also updates the submission's payment_status to Paid if the tx is Success.
+    """
+    if not frappe.db.exists("ITR Filing Submission", submission_name):
+        frappe.throw(f"Submission '{submission_name}' not found.")
+
+    # Find the transaction log by ID
+    log_name = frappe.db.get_value("PayU Transaction Log", {"transaction_id": transaction_id}, "name")
+
+    if not log_name:
+        # Transaction not in our log — fetch from PayU API and create it
+        settings = get_payu_settings()
+        api_status = verify_payment_with_payu_api(transaction_id, settings)
+        if not api_status or api_status.get("status") != 1:
+            frappe.throw(f"Transaction ID '{transaction_id}' not found in PayU. Please verify the ID.")
+
+        txn_details = api_status.get("transaction_details", {}).get(transaction_id, {})
+        is_success = txn_details.get("status") == "success"
+
+        tx_log = frappe.get_doc({
+            "doctype": "PayU Transaction Log",
+            "transaction_id": transaction_id,
+            "client_request_ref": submission_name,
+            "client_name": txn_details.get("firstname", ""),
+            "client_mobile": txn_details.get("phone", ""),
+            "client_email": txn_details.get("email", ""),
+            "amount": txn_details.get("amt"),
+            "status": "Success" if is_success else "Failed",
+            "payment_method": txn_details.get("mode", ""),
+            "upi_id": txn_details.get("bank_ref_num", ""),
+            "response_data": frappe.as_json(txn_details),
+            "payment_date": frappe.utils.now_datetime(),
+        })
+        tx_log.insert(ignore_permissions=True)
+        frappe.db.commit()
+        log_name = tx_log.name
+        status = "Success" if is_success else "Failed"
+    else:
+        # Update existing log with the correct ref
+        log_doc = frappe.get_doc("PayU Transaction Log", log_name)
+        log_doc.client_request_ref = submission_name
+        log_doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        status = log_doc.status
+
+    # Update submission payment_status if payment was successful
+    if status == "Success":
+        frappe.db.set_value("ITR Filing Submission", submission_name, "payment_status", "Paid")
+        frappe.db.commit()
+
+    return {
+        "success": True,
+        "log_name": log_name,
+        "status": status,
+        "message": f"Transaction {transaction_id} linked to {submission_name} ({status})."
+    }
 
 
 def verify_payment_with_payu_api(txnid, settings):

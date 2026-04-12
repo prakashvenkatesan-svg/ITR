@@ -140,13 +140,53 @@ frappe.ui.form.on('ITR Filing Submission', {
                             frappe.msgprint({
                                 title: __('💳 Payment History'),
                                 message: `
-                                    <div style="text-align:center;padding:30px;color:#888;">
-                                        <i class="fa fa-credit-card" style="font-size:40px;margin-bottom:12px;display:block;"></i>
-                                        <p style="font-size:14px;">No payment transactions recorded yet for this submission.</p>
-                                        <p style="font-size:12px;color:#aaa;">Payment transactions will appear here once the client completes payment via PayU.</p>
+                                    <div style="text-align:center;padding:24px 16px;color:#888;">
+                                        <i class="fa fa-credit-card" style="font-size:36px;margin-bottom:10px;display:block;color:#d1d5db;"></i>
+                                        <p style="font-size:14px;font-weight:600;color:#374151;margin-bottom:6px;">No payment transactions linked yet.</p>
+                                        <p style="font-size:12px;color:#9ca3af;margin-bottom:16px;">
+                                            If the client has already paid via PayU, paste the <strong>PayU Payment ID</strong>
+                                            below to link it to this record.
+                                        </p>
+                                        <div style="display:flex;gap:8px;max-width:400px;margin:0 auto;">
+                                            <input id="manual-txn-id" type="text" placeholder="e.g. 28138077938"
+                                                style="flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;outline:none;">
+                                            <button id="manual-link-btn"
+                                                style="background:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">
+                                                🔗 Link
+                                            </button>
+                                        </div>
                                     </div>`,
                                 indicator: 'orange'
                             });
+
+                            // Bind the link button inside the msgprint dialog
+                            setTimeout(() => {
+                                $('#manual-link-btn').on('click', function() {
+                                    const txn_id = $('#manual-txn-id').val().trim();
+                                    if (!txn_id) {
+                                        frappe.show_alert({ message: __('Please enter a PayU Payment ID.'), indicator: 'orange' });
+                                        return;
+                                    }
+                                    frappe.call({
+                                        method: 'payu_frappe.api.link_payment_to_submission',
+                                        args: { transaction_id: txn_id, submission_name: frm.doc.name },
+                                        freeze: true,
+                                        freeze_message: __('Linking payment…'),
+                                        callback(r) {
+                                            if (r.message && r.message.success) {
+                                                frappe.msgprint({
+                                                    title: __('✅ Payment Linked'),
+                                                    message: r.message.message,
+                                                    indicator: r.message.status === 'Success' ? 'green' : 'orange'
+                                                });
+                                                frm.reload_doc();
+                                            } else {
+                                                frappe.msgprint({ title: __('Error'), message: r.message || 'Link failed.', indicator: 'red' });
+                                            }
+                                        }
+                                    });
+                                });
+                            }, 300);
                             return;
                         }
 
