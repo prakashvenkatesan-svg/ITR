@@ -70,7 +70,7 @@ def submit_itr_details():
         if ty and "AY" not in ty:
             ty = f"AY {ty}"
         doc.tax_year = ty
-        doc.annual_income = data.get("annualIncome")
+
 
         # --- Mobile ---
         doc.mobile_number = str(data.get("mobileNumber") or data.get("mobile") or "").strip()
