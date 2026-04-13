@@ -1001,14 +1001,12 @@ def capture_pre_save_stage(doc, method):
     """
     Hook: called `before_save` via hooks.py doc_events.
 
-    Stashes the CURRENT (pre-save) stage_status and regional_manager from the
-    database onto the doc object so that `reassign_to_rm_on_in_progress` can
-    reliably detect the New Client → In Progress transition.
-
-    Why: `get_doc_before_save()` is only populated during `before_save`/`validate`;
-    by the time `on_update` fires it returns None, so we must capture it here.
+    1. Stashes the pre-save stage_status and regional_manager so on_update
+       can use them for logging and ToDo creation.
+    2. Applies Phase 2 reassignment HERE (before_save) by directly updating
+       doc.regional_manager — this makes the new RM part of the DB write
+       itself, which is reliable in all Frappe versions.
     """
-    # Only meaningful for existing (non-new) documents
     if doc.is_new():
         return
 
@@ -1017,41 +1015,27 @@ def capture_pre_save_stage(doc, method):
     doc._pre_save_stage = db_stage
     doc._pre_save_rm    = db_rm
 
+    # Apply reassignment directly on the doc (written to DB in the same save)
+    _apply_phase2_reassignment(doc, db_stage, db_rm)
 
 
-def reassign_to_rm_on_in_progress(doc, method):
+def _apply_phase2_reassignment(doc, prev_stage, prev_rm):
     """
-    Hook: called `on_update` via hooks.py doc_events.
+    Called from capture_pre_save_stage (before_save context).
 
-    PHASE 2 — Workload-Based Reassignment
-    ----------------------------------------
-    Trigger condition (ALL must be true):
-      A. stage_status is now "In Progress"
-      B. Before this save, stage_status was "New Client" (exact transition check)
-      C. regional_manager is still INTAKE_USER (padmapriya — still owns the record)
-      D. assignment_method is "Auto Assign" (not manually overridden)
-
-    Stage transition is detected using the _pre_save_stage value stashed by
-    capture_pre_save_stage (before_save hook), preventing duplicate firing on
-    subsequent saves after the initial New Client → In Progress transition.
+    Checks all four conditions and, if met, sets doc.regional_manager to the
+    correct target RM — which Frappe then writes to DB as part of this save.
+    Stashes result values for on_update (logging + ToDo).
     """
-    # Condition A
+    # Condition A — only fires on In Progress
     if doc.stage_status != "In Progress":
         return
 
-    # Condition B — verify exact stage transition from "New Client"
-    # Use stashed pre-save value (set by capture_pre_save_stage in before_save).
-    # Fall back to a DB lookup in case the hook chain runs in an unusual order.
-    prev_stage = getattr(doc, "_pre_save_stage", None)
-    if prev_stage is None:
-        prev_stage = frappe.db.get_value("ITR Filing Submission", doc.name, "stage_status") or ""
+    # Condition B — must be transitioning from New Client
     if prev_stage != "New Client":
         return
 
-    # Condition C — record must still be in the intake queue
-    prev_rm = getattr(doc, "_pre_save_rm", None)
-    if prev_rm is None:
-        prev_rm = frappe.db.get_value("ITR Filing Submission", doc.name, "regional_manager") or ""
+    # Condition C — must still be in the intake queue
     if prev_rm != INTAKE_USER:
         return
 
@@ -1063,28 +1047,53 @@ def reassign_to_rm_on_in_progress(doc, method):
     mobile = (getattr(doc, "mobile_number", None) or "").strip()
     email  = (getattr(doc, "email",         None) or "").strip()
 
-    # ── Priority 1: Sticky by PAN — same individual returning ───────────────
+    # Priority 1: Sticky by PAN — same individual returning
     prior_rm = _get_prior_rm_for_pan(pan)
 
-    # ── Priority 2: Family member — shared mobile or email ──────────────────
+    # Priority 2: Family member — shared mobile or email
     contact_rm = None
     if not prior_rm:
         contact_rm = _get_prior_rm_for_contact(mobile, email, exclude_name=doc.name)
 
-    # ── Priority 3: Workload balancing — least-loaded RM in pool ────────────
+    # Priority 3: Workload balancing — least-loaded RM in pool
     target_rm = prior_rm or contact_rm or _get_least_loaded_rm()
 
     if not target_rm:
         frappe.log_error(
             title="RM Reassignment Skipped — Pool Empty",
-            message=f"Doc {doc.name} moved to In Progress but no RM available. Stays with intake user."
+            message=f"Doc {doc.name}: New Client → In Progress but no RM in pool. Stays with intake user."
         )
         return
 
-    # Update regional_manager in DB and sync in-memory doc
-    frappe.db.set_value("ITR Filing Submission", doc.name, "regional_manager", target_rm)
-    doc.regional_manager = target_rm  # keep in-memory doc in sync for caller
-    frappe.db.commit()
+    # Set directly on doc — Frappe writes this to DB in the current save
+    doc.regional_manager = target_rm
+
+    # Stash results for on_update (used by ToDo creation and logging)
+    doc._phase2_target_rm  = target_rm
+    doc._phase2_prior_rm   = prior_rm
+    doc._phase2_contact_rm = contact_rm
+    doc._phase2_pan        = pan
+    doc._phase2_mobile     = mobile
+    doc._phase2_email      = email
+
+
+def reassign_to_rm_on_in_progress(doc, method):
+    """
+    Hook: called `on_update` via hooks.py doc_events.
+
+    The actual reassignment (doc.regional_manager update) is done in
+    before_save by _apply_phase2_reassignment via capture_pre_save_stage.
+    This hook only creates the ToDo notification and writes the audit log.
+    """
+    target_rm  = getattr(doc, "_phase2_target_rm",  None)
+    prior_rm   = getattr(doc, "_phase2_prior_rm",   None)
+    contact_rm = getattr(doc, "_phase2_contact_rm", None)
+    pan        = getattr(doc, "_phase2_pan",        "") or ""
+    mobile     = getattr(doc, "_phase2_mobile",     "") or ""
+    email      = getattr(doc, "_phase2_email",      "") or ""
+
+    if not target_rm:
+        return  # No Phase 2 reassignment happened in this save
 
     # Add Frappe built-in assignment (shows in sidebar, sends notification to RM)
     try:
@@ -1099,7 +1108,7 @@ def reassign_to_rm_on_in_progress(doc, method):
             "priority": "Medium"
         }).insert(ignore_permissions=True)
     except Exception:
-        pass  # Do not block assignment if ToDo creation fails
+        pass  # Never block the save if ToDo creation fails
 
     if prior_rm:
         assignment_type = "Sticky (Prior PAN)"
