@@ -937,6 +937,28 @@ def auto_assign_regional_manager(doc, method):
     )
 
 
+def capture_pre_save_stage(doc, method):
+    """
+    Hook: called `before_save` via hooks.py doc_events.
+
+    Stashes the CURRENT (pre-save) stage_status and regional_manager from the
+    database onto the doc object so that `reassign_to_rm_on_in_progress` can
+    reliably detect the New Client → In Progress transition.
+
+    Why: `get_doc_before_save()` is only populated during `before_save`/`validate`;
+    by the time `on_update` fires it returns None, so we must capture it here.
+    """
+    # Only meaningful for existing (non-new) documents
+    if doc.is_new():
+        return
+
+    db_stage = frappe.db.get_value("ITR Filing Submission", doc.name, "stage_status") or ""
+    db_rm    = frappe.db.get_value("ITR Filing Submission", doc.name, "regional_manager") or ""
+    doc._pre_save_stage = db_stage
+    doc._pre_save_rm    = db_rm
+
+
+
 def reassign_to_rm_on_in_progress(doc, method):
     """
     Hook: called `on_update` via hooks.py doc_events.
@@ -949,21 +971,28 @@ def reassign_to_rm_on_in_progress(doc, method):
       C. regional_manager is still INTAKE_USER (padmapriya — still owns the record)
       D. assignment_method is "Auto Assign" (not manually overridden)
 
-    Uses Frappe's get_doc_before_save() to detect the exact New Client→In Progress
-    transition, preventing duplicate firing on subsequent saves.
+    Stage transition is detected using the _pre_save_stage value stashed by
+    capture_pre_save_stage (before_save hook), preventing duplicate firing on
+    subsequent saves after the initial New Client → In Progress transition.
     """
     # Condition A
     if doc.stage_status != "In Progress":
         return
 
     # Condition B — verify exact stage transition from "New Client"
-    doc_before = doc.get_doc_before_save()
-    prev_stage = doc_before.stage_status if doc_before else ""
+    # Use stashed pre-save value (set by capture_pre_save_stage in before_save).
+    # Fall back to a DB lookup in case the hook chain runs in an unusual order.
+    prev_stage = getattr(doc, "_pre_save_stage", None)
+    if prev_stage is None:
+        prev_stage = frappe.db.get_value("ITR Filing Submission", doc.name, "stage_status") or ""
     if prev_stage != "New Client":
         return
 
     # Condition C — record must still be in the intake queue
-    if doc.regional_manager != INTAKE_USER:
+    prev_rm = getattr(doc, "_pre_save_rm", None)
+    if prev_rm is None:
+        prev_rm = frappe.db.get_value("ITR Filing Submission", doc.name, "regional_manager") or ""
+    if prev_rm != INTAKE_USER:
         return
 
     # Condition D — respect manual overrides

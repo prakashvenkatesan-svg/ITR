@@ -37,6 +37,7 @@ doctype_list_js = {
 doc_events = {
     "ITR Filing Submission": {
         "before_insert": "payu_frappe.api.auto_assign_regional_manager",
+        "before_save": "payu_frappe.api.capture_pre_save_stage",
         "on_update": "payu_frappe.api.reassign_to_rm_on_in_progress"
     }
 }
