@@ -782,6 +782,7 @@ RM_ROLE = "ITR Regional Manager"
 # Users completely excluded from the RM pool — developers/admins who must never own client records
 EXCLUDED_USERS = {
     "prakash.venkatesan@aionioncapital.com",
+    "anshul.gupta@aionioncapital.com",
     "Administrator",
 }
 
@@ -1039,9 +1040,14 @@ def _apply_phase2_reassignment(doc, prev_stage, prev_rm):
     if prev_rm != INTAKE_USER:
         return
 
-    # Condition D — respect manual overrides
-    if getattr(doc, "assignment_method", None) != "Auto Assign":
-        return
+    # Condition D — respect genuine manual overrides only.
+    # Skip ONLY if assignment_method is explicitly "Manual Assign" AND a real
+    # (non-intake) RM has already been set. Records with the old default
+    # "Manual Assign" but still owned by the intake user are eligible.
+    if getattr(doc, "assignment_method", None) == "Manual Assign":
+        current_rm = getattr(doc, "regional_manager", None) or ""
+        if current_rm and current_rm != INTAKE_USER:
+            return  # A real RM was manually chosen — respect it
 
     pan    = (getattr(doc, "pan_number",    None) or "").strip().upper()
     mobile = (getattr(doc, "mobile_number", None) or "").strip()
@@ -1067,6 +1073,9 @@ def _apply_phase2_reassignment(doc, prev_stage, prev_rm):
 
     # Set directly on doc — Frappe writes this to DB in the current save
     doc.regional_manager = target_rm
+    # Also sync the fetch_from display field — fetch_from only updates on the
+    # frontend when a user changes the Link; backend code must set it explicitly.
+    doc.regional_manager_name = frappe.db.get_value("User", target_rm, "full_name") or target_rm
 
     # Stash results for on_update (used by ToDo creation and logging)
     doc._phase2_target_rm  = target_rm

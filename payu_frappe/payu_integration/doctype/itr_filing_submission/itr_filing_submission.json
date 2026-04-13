@@ -82,7 +82,7 @@
         {"fieldname": "interested_in_services", "fieldtype": "Data", "label": "Interested In Services"},
 
         {"fieldname": "section_2_workflow", "fieldtype": "Section Break", "label": "Workflow & Assignment"},
-        {"fieldname": "assignment_method", "fieldtype": "Select", "label": "Assignment Method", "options": "Manual Assign\nAuto Assign", "default": "Manual Assign"},
+        {"fieldname": "assignment_method", "fieldtype": "Select", "label": "Assignment Method", "options": "Manual Assign\nAuto Assign", "default": "Auto Assign"},
         {"fieldname": "regional_manager", "fieldtype": "Link", "label": "Regional Manager ID", "options": "User", "in_list_view": 0},
         {"fieldname": "regional_manager_name", "fieldtype": "Data", "label": "Regional Manager", "fetch_from": "regional_manager.full_name", "in_list_view": 1},
         {"fieldname": "stage_status", "fieldtype": "Select", "label": "Stage Status", "in_list_view": 1,
