@@ -835,6 +835,66 @@ def _get_prior_rm_for_pan(pan):
     return prior_rm or None
 
 
+def _get_prior_rm_for_contact(mobile, email, exclude_name=None):
+    """
+    Check if any OTHER ITR Filing Submission shares the same mobile number or
+    email address and is already handled by a real RM (not padmapriya / excluded).
+
+    Used for family member detection — e.g. Son submits with Father's mobile:
+    Son has a different PAN (New Client) but inherits Father's assigned RM.
+
+    Matching rules:
+      - Mobile : last 10 digits are compared (strips STD/country prefix).
+      - Email  : exact match, case-insensitive.
+      - Either match is sufficient (OR logic).
+      - The current document (exclude_name) is always excluded.
+      - Only submissions whose regional_manager is a real pool RM are considered.
+
+    Returns the RM email string, or None if no family match is found.
+    """
+    mobile_clean = ""
+    if mobile:
+        mobile_clean = str(mobile).strip().replace(" ", "").replace("-", "")[-10:]
+
+    email_clean = (email or "").strip().lower()
+
+    if not mobile_clean and not email_clean:
+        return None
+
+    excluded = ["", INTAKE_USER] + list(EXCLUDED_USERS)
+
+    # Build OR filter: match by mobile OR email (whichever are available)
+    filters = [
+        ["regional_manager", "not in", excluded],
+    ]
+    if exclude_name:
+        filters.append(["name", "!=", exclude_name])
+
+    # Fetch candidates that have a real RM assigned
+    candidates = frappe.get_all(
+        "ITR Filing Submission",
+        filters=filters,
+        fields=["name", "mobile_number", "email", "regional_manager"],
+        order_by="creation asc",   # earliest match wins for consistency
+        limit=200
+    )
+
+    for rec in candidates:
+        # --- Mobile check ---
+        if mobile_clean:
+            rec_mobile = str(rec.get("mobile_number") or "").strip().replace(" ", "").replace("-", "")[-10:]
+            if rec_mobile and rec_mobile == mobile_clean:
+                return rec["regional_manager"]
+
+        # --- Email check ---
+        if email_clean:
+            rec_email = (rec.get("email") or "").strip().lower()
+            if rec_email and rec_email == email_clean:
+                return rec["regional_manager"]
+
+    return None
+
+
 def _get_least_loaded_rm():
     """
     Return the RM email (from the dynamic role-based pool) with the fewest
@@ -999,11 +1059,20 @@ def reassign_to_rm_on_in_progress(doc, method):
     if getattr(doc, "assignment_method", None) != "Auto Assign":
         return
 
-    pan = (getattr(doc, "pan_number", None) or "").strip().upper()
+    pan    = (getattr(doc, "pan_number",    None) or "").strip().upper()
+    mobile = (getattr(doc, "mobile_number", None) or "").strip()
+    email  = (getattr(doc, "email",         None) or "").strip()
 
-    # Determine target RM: sticky if PAN has a prior real RM, else least-loaded
+    # ── Priority 1: Sticky by PAN — same individual returning ───────────────
     prior_rm = _get_prior_rm_for_pan(pan)
-    target_rm = prior_rm if prior_rm else _get_least_loaded_rm()
+
+    # ── Priority 2: Family member — shared mobile or email ──────────────────
+    contact_rm = None
+    if not prior_rm:
+        contact_rm = _get_prior_rm_for_contact(mobile, email, exclude_name=doc.name)
+
+    # ── Priority 3: Workload balancing — least-loaded RM in pool ────────────
+    target_rm = prior_rm or contact_rm or _get_least_loaded_rm()
 
     if not target_rm:
         frappe.log_error(
@@ -1032,12 +1101,20 @@ def reassign_to_rm_on_in_progress(doc, method):
     except Exception:
         pass  # Do not block assignment if ToDo creation fails
 
-    assignment_type = "Sticky (Prior RM)" if prior_rm else "Workload (Least Loaded)"
+    if prior_rm:
+        assignment_type = "Sticky (Prior PAN)"
+    elif contact_rm:
+        assignment_type = "Family Member (Shared Mobile/Email)"
+    else:
+        assignment_type = "Workload (Least Loaded)"
+
     frappe.log_error(
         title=f"RM Reassigned ({assignment_type} — In Progress)",
         message=(
             f"Doc: {doc.name}\n"
             f"PAN: {pan or 'N/A'}\n"
+            f"Mobile: {mobile or 'N/A'}\n"
+            f"Email: {email or 'N/A'}\n"
             f"Transition: New Client → In Progress\n"
             f"Assigned to: {target_rm}\n"
             f"Method: {assignment_type}"
