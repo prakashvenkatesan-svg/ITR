@@ -94,8 +94,8 @@ def sync_payu_transactions(itr_submission_name, mihpayid=None):
     doc = frappe.get_doc("ITR Filing Submission", itr_submission_name)
     settings = get_payu_settings()
 
-    if doc.payment_status == "Paid":
-        return {"status": "already_paid", "message": "This submission is already marked as Paid."}
+    if doc.payment_status == "Success":
+        return {"status": "already_paid", "message": "This submission is already marked as Success."}
 
     # ── STRATEGY 0: Direct lookup by PayU Payment ID (mihpayid) ─────────────
     # This is the most reliable method — user provides the ID shown on PayU's
@@ -175,7 +175,7 @@ def sync_payu_transactions(itr_submission_name, mihpayid=None):
         _mark_itr_as_paid(doc)
         return {
             "status": "success",
-            "message": f"Payment confirmed! Transaction {txnid} logged. ITR marked as Paid.",
+            "message": f"Payment confirmed! Transaction {txnid} logged. ITR marked as Success.",
             "txnid": txnid,
             "is_paid": True
         }
@@ -193,13 +193,16 @@ def sync_payu_transactions(itr_submission_name, mihpayid=None):
 # ---------------------------------------------------------------------------
 
 def _mark_itr_as_paid(doc):
-    """Mark the given ITR Filing Submission as Paid without triggering full save hooks."""
+    """Mark the given ITR Filing Submission as Success without triggering full save hooks."""
     try:
-        frappe.db.set_value("ITR Filing Submission", doc.name, "payment_status", "Paid")
+        frappe.db.set_value("ITR Filing Submission", doc.name, {
+            "payment_status": "Success",
+            "stage_status": "Payment Completed"
+        })
         frappe.db.commit()
         frappe.log_error(
             title="PayU Sync — Payment Status Updated",
-            message=f"ITR Submission {doc.name} marked as Paid."
+            message=f"ITR Submission {doc.name} marked as Success and Stage Status updated to Payment Completed."
         )
     except Exception:
         frappe.log_error(
@@ -539,22 +542,22 @@ def _fetch_all_todays_transactions(settings):
 def _match_txn_to_itr(record, payu_txns):
     """
     Tries to match a PayU transaction to an ITR Filing Submission.
-    Matches by mobile number (last 10 digits) OR email address.
+    Matches by Unique Submission ID (udf1) or txnid prefix.
     """
-    mobile_last10 = str(record.get("mobile_number") or "")[-10:]
-    email = str(record.get("email") or "").lower().strip()
-    amount = float(record.get("service_amount") or 0)
+    record_name = record.get("name")
+    if not record_name:
+        return None
+        
+    short_name_expected = record_name.replace("-", "")[-8:]
 
     for txn in payu_txns:
-        txn_mobile = str(txn.get("phone") or txn.get("mobile") or "")[-10:]
-        txn_email  = str(txn.get("email") or "").lower().strip()
-        txn_amount = float(txn.get("amount") or 0)
-
-        # Primary match: mobile number
-        if mobile_last10 and txn_mobile and mobile_last10 == txn_mobile:
+        # Match using udf1 if available
+        if txn.get("udf1") == record_name:
             return txn
-        # Secondary match: email
-        if email and txn_email and email == txn_email:
+            
+        # Match by txnid prefix
+        txnid = txn.get("txnid", "")
+        if txnid and txnid.startswith(short_name_expected + "-"):
             return txn
 
     return None
@@ -685,32 +688,21 @@ def handle_payu_webhook():
             frappe.local.response["message"] = "duplicate"
             return
 
-        # ── Find the matching ITR submission by mobile or email ───────────────
+        # ── Find the matching ITR submission using Unique ID (udf1 or txnid) ───
         itr_doc    = None
         itr_name   = None
 
-        if phone:
-            mobile_last10 = str(phone)[-10:]
-            matches = frappe.get_all(
-                "ITR Filing Submission",
-                filters={"mobile_number": ["like", f"%{mobile_last10}"]},
-                fields=["name", "payment_status"],
-                order_by="creation desc",
-                limit=1
-            )
-            if matches:
-                itr_name = matches[0]["name"]
-
-        if not itr_name and email:
-            matches = frappe.get_all(
-                "ITR Filing Submission",
-                filters={"email": email},
-                fields=["name", "payment_status"],
-                order_by="creation desc",
-                limit=1
-            )
-            if matches:
-                itr_name = matches[0]["name"]
+        udf1_val = data.get("udf1", "")
+        if udf1_val and frappe.db.exists("ITR Filing Submission", udf1_val):
+            itr_name = udf1_val
+            
+        # Fallback: Extract from txnid (e.g. SUB03346-240705120000)
+        if not itr_name and txnid:
+            short_name = txnid.split("-")[0]
+            if short_name.startswith("SUB"):
+                candidate = "ITR-SUB-" + short_name[3:]
+                if frappe.db.exists("ITR Filing Submission", candidate):
+                    itr_name = candidate
 
         if itr_name:
             itr_doc = frappe.get_doc("ITR Filing Submission", itr_name)
@@ -756,7 +748,7 @@ def handle_payu_webhook():
         else:
             frappe.log_error(
                 title="PayU Webhook — Orphan Log Created",
-                message=f"No ITR match for phone={phone}/email={email}. Log saved as orphan: {log_txn_id}"
+                message=f"No ITR match for txnid={txnid}. Log saved as orphan: {log_txn_id}"
             )
 
         frappe.local.response["http_status_code"] = 200
