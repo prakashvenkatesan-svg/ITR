@@ -97,6 +97,29 @@ def sync_payu_transactions(itr_submission_name, mihpayid=None):
     if doc.payment_status == "Success":
         return {"status": "already_paid", "message": "This submission is already marked as Success."}
 
+    # ── STRATEGY -1: Check local database first ─────────────────────────────
+    if mihpayid:
+        mihpayid_str = str(mihpayid).strip()
+        local_log_name = frappe.db.get_value("PayU Transaction Log", {"transaction_id": mihpayid_str}, "name")
+        if local_log_name:
+            local_log = frappe.get_doc("PayU Transaction Log", local_log_name)
+            is_paid = local_log.status.lower() in ("success", "captured", "paid")
+            
+            if is_paid:
+                _mark_itr_as_paid(doc)
+            
+            if local_log.client_request_ref != doc.name:
+                local_log.client_request_ref = doc.name
+                local_log.save(ignore_permissions=True)
+                frappe.db.commit()
+                
+            return {
+                "status": "success" if is_paid else "already_logged",
+                "message": f"Found local transaction {mihpayid_str} and linked it to this submission." if is_paid else f"Transaction {mihpayid_str} found locally but status is {local_log.status}.",
+                "txnid": mihpayid_str,
+                "is_paid": is_paid
+            }
+
     # ── STRATEGY 0: Direct lookup by PayU Payment ID (mihpayid) ─────────────
     # This is the most reliable method — user provides the ID shown on PayU's
     # success page (e.g. Payment ID: 28126138459)
@@ -113,7 +136,7 @@ def sync_payu_transactions(itr_submission_name, mihpayid=None):
 
     # ── STRATEGY 2: Use PayU Payment Links Transactions API ─────────────────
     if not txn_data and doc.payment_link:
-        txn_data = _query_payu_payment_link_txns_by_date(doc, settings)
+        txn_data = _query_payu_payment_link_txns_by_date(doc, settings, mihpayid)
 
     if not txn_data:
         frappe.log_error(
@@ -330,10 +353,10 @@ def _query_payu_by_txnid(txnid, settings):
 
 
 # ---------------------------------------------------------------------------
-# Helper: Query PayU Payment Links Transactions API by date range
+# Helper: Query PayU Payment Links Transactions API (by date + mihpayid)
 # ---------------------------------------------------------------------------
 
-def _query_payu_payment_link_txns_by_date(doc, settings):
+def _query_payu_payment_link_txns_by_date(doc, settings, mihpayid=None):
     """
     Uses PayU's Payment Links GET transactions API with OAuth Bearer token.
     Endpoint: GET /payment-links/transactions?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&merchantId=xxx
@@ -403,6 +426,9 @@ def _query_payu_payment_link_txns_by_date(doc, settings):
         short_name_expected = doc.name.replace("-", "")[-8:]
 
         for txn in txn_list:
+            if mihpayid and str(txn.get("mihpayid", "")) == str(mihpayid).strip():
+                return txn
+                
             # Check all possible fields where doc.name could be stored
             possible_refs = [
                 txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"), 
