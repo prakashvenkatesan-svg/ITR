@@ -648,15 +648,16 @@ def handle_payu_webhook():
       Events: payment_success
     """
     try:
-        data      = frappe.request.form
+        # frappe.form_dict automatically merges JSON body, form data, and query params
+        data      = frappe.form_dict
         key       = data.get("key", "")
-        txnid     = data.get("txnid", "")
-        amount    = data.get("amount", "")
-        email     = data.get("email", "")
-        status    = (data.get("status", "") or "").lower()
-        mihpayid  = data.get("mihpayid", "")
-        firstname = data.get("firstname", "")
-        phone     = data.get("phone", "")
+        txnid     = data.get("txnid") or data.get("referenceId", "")
+        amount    = data.get("amount") or data.get("paymentAmount", "")
+        email     = data.get("email") or data.get("customerEmail", "")
+        status    = (data.get("status") or data.get("paymentStatus") or "").lower()
+        mihpayid  = data.get("mihpayid") or data.get("paymentId", "")
+        firstname = data.get("firstname") or data.get("customerName", "")
+        phone     = data.get("phone") or data.get("customerMobile") or data.get("customerPhone", "")
         payu_hash = data.get("hash", "")
 
         # Log EVERYTHING we receive for debugging
@@ -738,11 +739,15 @@ def handle_payu_webhook():
         # Fallback: Extract from txnid or referenceId (e.g. SUB03346-240705120000)
         txn_id_str = str(txnid or data.get("referenceId") or "").strip()
         if not itr_name and txn_id_str:
+            # txnid might be like SUB03398-240706001246 or just SUB03398
             short_name = txn_id_str.split("-")[0]
             if short_name.startswith("SUB"):
                 candidate = "ITR-SUB-" + short_name[3:]
                 if frappe.db.exists("ITR Filing Submission", candidate):
                     itr_name = candidate
+            # also try matching directly if txnid is literally ITR-SUB-...
+            if not itr_name and frappe.db.exists("ITR Filing Submission", txn_id_str):
+                itr_name = txn_id_str
 
         if itr_name:
             itr_doc = frappe.get_doc("ITR Filing Submission", itr_name)
