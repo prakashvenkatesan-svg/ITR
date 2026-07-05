@@ -1277,3 +1277,44 @@ def has_custom_permission(doc, ptype, user):
         return True
 
     return False
+def force_import_doctypes():
+    import frappe
+    import os
+    from frappe.modules.import_file import import_file_by_path
+    
+    base_path = frappe.get_app_path('payu_frappe', 'payu_integration', 'doctype')
+    if not os.path.exists(base_path):
+        return
+        
+    for dt_folder in os.listdir(base_path):
+        dt_path = os.path.join(base_path, dt_folder)
+        if os.path.isdir(dt_path):
+            json_file = os.path.join(dt_path, f"{dt_folder}.json")
+            if os.path.exists(json_file):
+                try:
+                    import_file_by_path(json_file, force=True, data_import=False)
+                    frappe.db.commit()
+                except Exception as e:
+                    frappe.log_error(title=f"Force Import Failed: {dt_folder}", message=str(e))
+
+def fix_module_def():
+    import frappe
+    try:
+        exists = frappe.db.sql("SELECT name FROM `tabModule Def` WHERE name = 'PayU Integration'")
+        if not exists:
+            frappe.db.sql("""
+                INSERT INTO `tabModule Def` (name, app_name, module_name, creation, modified, modified_by, owner) 
+                VALUES ('PayU Integration', 'payu_frappe', 'PayU Integration', NOW(), NOW(), 'Administrator', 'Administrator')
+            """)
+        else:
+            frappe.db.sql("""
+                UPDATE `tabModule Def` 
+                SET app_name = 'payu_frappe' 
+                WHERE name = 'PayU Integration'
+            """)
+        frappe.db.commit()
+        frappe.cache().delete_key("app_modules")
+        if hasattr(frappe.local, "module_app"):
+            delattr(frappe.local, "module_app")
+    except Exception:
+        pass
