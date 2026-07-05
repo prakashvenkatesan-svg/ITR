@@ -1315,6 +1315,6 @@ def fix_module_def():
         frappe.db.commit()
         frappe.cache().delete_key("app_modules")
         if hasattr(frappe.local, "module_app"):
-            delattr(frappe.local, "module_app")
+            frappe.local.module_app["payu_integration"] = "payu_frappe"
     except Exception:
         pass
