@@ -1330,11 +1330,18 @@ def fix_module_def():
     import frappe
     # Force fix any Module Defs pointing to 'payu_integration' app instead of 'payu_frappe'
     try:
-        frappe.db.sql("""
-            UPDATE `tabModule Def` 
-            SET app_name = 'payu_frappe' 
-            WHERE app_name = 'payu_integration' OR name = 'PayU Integration'
-        """)
+        exists = frappe.db.sql("SELECT name FROM `tabModule Def` WHERE name = 'PayU Integration'")
+        if not exists:
+            frappe.db.sql("""
+                INSERT INTO `tabModule Def` (name, app_name, module_name, creation, modified, modified_by, owner) 
+                VALUES ('PayU Integration', 'payu_frappe', 'PayU Integration', NOW(), NOW(), 'Administrator', 'Administrator')
+            """)
+        else:
+            frappe.db.sql("""
+                UPDATE `tabModule Def` 
+                SET app_name = 'payu_frappe' 
+                WHERE name = 'PayU Integration'
+            """)
         frappe.db.commit()
         # Force cache reload so get_module_app picks up the fixed app_name
         frappe.cache().delete_key("app_modules")
