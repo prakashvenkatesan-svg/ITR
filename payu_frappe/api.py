@@ -479,6 +479,7 @@ def generate_payment_link_and_send(request_id):
         "customerName": str(doc.full_name or "Client").strip()[:30],
         "customerEmail": str(doc.email).strip(),
         "customerMobile": str(doc.mobile_number or "9999999999").strip(),
+        "udf1": doc.name,
         "sendEmail": 0,
         "sendSms": 0,
         "successUrl": success_callback,
@@ -657,7 +658,8 @@ def handle_callback():
     if api_verified:
         if request_ref and frappe.db.exists("ITR Filing Submission", request_ref):
             req_doc = frappe.get_doc("ITR Filing Submission", request_ref)
-            req_doc.payment_status = "Paid"
+            req_doc.payment_status = "Success"
+            req_doc.stage_status = "Payment Completed"
             req_doc.save(ignore_permissions=True)
             frappe.db.commit()
 
@@ -673,7 +675,7 @@ def link_payment_to_submission(transaction_id, submission_name):
     """
     Manually link a PayU Transaction Log entry to an ITR Filing Submission.
     Used from the Payment History popup when auto-link fails (e.g. PayU Payment Link flow).
-    Also updates the submission's payment_status to Paid if the tx is Success.
+    Also updates the submission's payment_status to Success if the tx is Success.
     """
     if not frappe.db.exists("ITR Filing Submission", submission_name):
         frappe.throw(f"Submission '{submission_name}' not found.")
@@ -719,7 +721,10 @@ def link_payment_to_submission(transaction_id, submission_name):
 
     # Update submission payment_status if payment was successful
     if status == "Success":
-        frappe.db.set_value("ITR Filing Submission", submission_name, "payment_status", "Paid")
+        frappe.db.set_value("ITR Filing Submission", submission_name, {
+            "payment_status": "Success",
+            "stage_status": "Payment Completed"
+        })
         frappe.db.commit()
 
     return {
@@ -786,6 +791,13 @@ EXCLUDED_USERS = {
     "Administrator",
 }
 
+def _get_stopped_users():
+    """Returns a list of emails for RMs who have been marked as Stopped."""
+    if frappe.db.exists("DocType", "RM Assignment Control"):
+        stopped = frappe.get_all("RM Assignment Control", filters={"status": "Stopped"}, fields=["user"])
+        return [s.user for s in stopped if s.user]
+    return []
+
 
 def _get_rm_pool():
     """
@@ -801,11 +813,12 @@ def _get_rm_pool():
         fields=["parent as user"]
     )
     pool = []
+    stopped_users = _get_stopped_users()
     for row in role_users:
         email = row.get("user") or row.get("parent") or ""
         if not email:
             continue
-        if email == INTAKE_USER or email in EXCLUDED_USERS:
+        if email == INTAKE_USER or email in EXCLUDED_USERS or email in stopped_users:
             continue
         # Only include accounts that are enabled (not disabled/locked)
         if frappe.db.get_value("User", email, "enabled"):
@@ -953,6 +966,12 @@ def auto_assign_regional_manager(doc, method):
     if stage == "Existing Client":
         # Priority 1: sticky assignment — this PAN has a real RM from the pool
         prior_rm = _get_prior_rm_for_pan(pan)
+        stopped_users = _get_stopped_users()
+        
+        if prior_rm and prior_rm in stopped_users:
+            frappe.log_error("Sticky RM Skipped", f"{prior_rm} is stopped. Falling back to active RM.")
+            prior_rm = None
+
         if prior_rm:
             doc.regional_manager = prior_rm
             frappe.log_error(
@@ -1060,6 +1079,15 @@ def _apply_phase2_reassignment(doc, prev_stage, prev_rm):
     contact_rm = None
     if not prior_rm:
         contact_rm = _get_prior_rm_for_contact(mobile, email, exclude_name=doc.name)
+
+    stopped_users = _get_stopped_users()
+    if prior_rm and prior_rm in stopped_users:
+        frappe.log_error("Sticky RM Skipped", f"{prior_rm} is stopped. Falling back to active RM.")
+        prior_rm = None
+        
+    if contact_rm and contact_rm in stopped_users:
+        frappe.log_error("Family RM Skipped", f"{contact_rm} is stopped. Falling back to active RM.")
+        contact_rm = None
 
     # Priority 3: Workload balancing — least-loaded RM in pool
     target_rm = prior_rm or contact_rm or _get_least_loaded_rm()
@@ -1277,6 +1305,7 @@ def has_custom_permission(doc, ptype, user):
         return True
 
     return False
+
 def force_import_doctypes():
     import frappe
     import os
@@ -1299,6 +1328,7 @@ def force_import_doctypes():
 
 def fix_module_def():
     import frappe
+    # Force fix any Module Defs pointing to 'payu_integration' app instead of 'payu_frappe'
     try:
         exists = frappe.db.sql("SELECT name FROM `tabModule Def` WHERE name = 'PayU Integration'")
         if not exists:
@@ -1313,8 +1343,9 @@ def fix_module_def():
                 WHERE name = 'PayU Integration'
             """)
         frappe.db.commit()
+        # Force cache reload so get_module_app picks up the fixed app_name
         frappe.cache().delete_key("app_modules")
         if hasattr(frappe.local, "module_app"):
-            frappe.local.module_app["payu_integration"] = "payu_frappe"
+            delattr(frappe.local, "module_app")
     except Exception:
         pass

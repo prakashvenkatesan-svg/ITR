@@ -465,7 +465,7 @@ function open_payu_dialog(frm) {
                     });
                     frm.reload_doc();
                 } else if (result.status === 'already_paid') {
-                    frappe.show_alert({ message: __('Already marked as Paid.'), indicator: 'blue' });
+                    frappe.show_alert({ message: __('Already marked as Success.'), indicator: 'blue' });
                 } else if (result.status === 'already_logged') {
                     frappe.msgprint({ title: __('Already Logged'), message: result.message, indicator: 'blue' });
                     frm.reload_doc();
