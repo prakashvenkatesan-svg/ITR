@@ -65,4 +65,5 @@ scheduler_events = {
     }
 }
 
+before_migrate = "payu_frappe.api.fix_module_def"
 after_migrate = "payu_frappe.api.force_import_doctypes"

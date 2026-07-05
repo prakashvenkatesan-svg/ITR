@@ -1325,3 +1325,18 @@ def force_import_doctypes():
                     frappe.db.commit()
                 except Exception as e:
                     frappe.log_error(title=f"Force Import Failed: {dt_folder}", message=str(e))
+
+def fix_module_def():
+    import frappe
+    # Force fix any Module Defs pointing to 'payu_integration' app instead of 'payu_frappe'
+    try:
+        frappe.db.sql("""
+            UPDATE `tabModule Def` 
+            SET app_name = 'payu_frappe' 
+            WHERE app_name = 'payu_integration' OR name = 'PayU Integration'
+        """)
+        frappe.db.commit()
+        # Force cache reload so get_module_app picks up the fixed app_name
+        frappe.cache().delete_key("app_modules")
+    except Exception:
+        pass
