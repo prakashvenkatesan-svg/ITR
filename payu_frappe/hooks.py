@@ -64,3 +64,5 @@ scheduler_events = {
         ]
     }
 }
+
+after_migrate = "payu_frappe.api.force_import_doctypes"
