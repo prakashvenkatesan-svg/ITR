@@ -1338,5 +1338,7 @@ def fix_module_def():
         frappe.db.commit()
         # Force cache reload so get_module_app picks up the fixed app_name
         frappe.cache().delete_key("app_modules")
+        if hasattr(frappe.local, "module_app"):
+            delattr(frappe.local, "module_app")
     except Exception:
         pass
