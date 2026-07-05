@@ -403,11 +403,16 @@ def _query_payu_payment_link_txns_by_date(doc, settings):
         short_name_expected = doc.name.replace("-", "")[-8:]
 
         for txn in txn_list:
-            if txn.get("udf1") == doc.name:
+            # Check all possible fields where doc.name could be stored
+            possible_refs = [
+                txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"), 
+                txn.get("invoiceId"), txn.get("customerRefId")
+            ]
+            if doc.name in [str(ref).strip() for ref in possible_refs if ref]:
                 return txn
                 
-            txnid = txn.get("txnid", "")
-            if txnid and txnid.startswith(short_name_expected + "-"):
+            txn_id = txn.get("txnid") or txn.get("referenceId") or txn.get("invoiceId") or ""
+            if txn_id and str(txn_id).startswith(short_name_expected + "-"):
                 return txn
 
         # If only one transaction in the range (likely this client's), return it
@@ -549,13 +554,17 @@ def _match_txn_to_itr(record, payu_txns):
     short_name_expected = record_name.replace("-", "")[-8:]
 
     for txn in payu_txns:
-        # Match using udf1 if available
-        if txn.get("udf1") == record_name:
+        # Match using extended udf fields if available
+        possible_refs = [
+            txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"),
+            txn.get("productinfo"), txn.get("invoiceId"), txn.get("customerRefId")
+        ]
+        if record_name in [str(ref).strip() for ref in possible_refs if ref]:
             return txn
             
         # Match by txnid prefix
-        txnid = txn.get("txnid", "")
-        if txnid and txnid.startswith(short_name_expected + "-"):
+        txn_id = txn.get("txnid") or txn.get("referenceId") or txn.get("invoiceId") or ""
+        if txn_id and str(txn_id).startswith(short_name_expected + "-"):
             return txn
 
     return None
@@ -690,13 +699,20 @@ def handle_payu_webhook():
         itr_doc    = None
         itr_name   = None
 
-        udf1_val = data.get("udf1", "")
-        if udf1_val and frappe.db.exists("ITR Filing Submission", udf1_val):
-            itr_name = udf1_val
+        possible_refs = [
+            data.get("udf1"), data.get("udf2"), data.get("referenceId"),
+            data.get("productinfo"), data.get("customerRefId")
+        ]
+        for ref in possible_refs:
+            ref_str = str(ref or "").strip()
+            if ref_str and frappe.db.exists("ITR Filing Submission", ref_str):
+                itr_name = ref_str
+                break
             
-        # Fallback: Extract from txnid (e.g. SUB03346-240705120000)
-        if not itr_name and txnid:
-            short_name = txnid.split("-")[0]
+        # Fallback: Extract from txnid or referenceId (e.g. SUB03346-240705120000)
+        txn_id_str = str(txnid or data.get("referenceId") or "").strip()
+        if not itr_name and txn_id_str:
+            short_name = txn_id_str.split("-")[0]
             if short_name.startswith("SUB"):
                 candidate = "ITR-SUB-" + short_name[3:]
                 if frappe.db.exists("ITR Filing Submission", candidate):
