@@ -423,23 +423,24 @@ def _query_payu_payment_link_txns_by_date(doc, settings, mihpayid=None):
             return None
 
         # Match by Unique Submission ID (udf1) or txnid prefix
-        short_name_expected = doc.name.replace("-", "")[-8:]
+        short_name_expected = doc.name.replace("-", "")[-8:] if doc else ""
 
         for txn in txn_list:
             if mihpayid and str(txn.get("mihpayid", "")) == str(mihpayid).strip():
                 return txn
                 
-            # Check all possible fields where doc.name could be stored
-            possible_refs = [
-                txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"), 
-                txn.get("invoiceId"), txn.get("customerRefId")
-            ]
-            if doc.name in [str(ref).strip() for ref in possible_refs if ref]:
-                return txn
-                
-            txn_id = txn.get("txnid") or txn.get("referenceId") or txn.get("invoiceId") or ""
-            if txn_id and str(txn_id).startswith(short_name_expected + "-"):
-                return txn
+            if doc:
+                # Check all possible fields where doc.name could be stored
+                possible_refs = [
+                    txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"), 
+                    txn.get("invoiceId"), txn.get("customerRefId")
+                ]
+                if doc.name in [str(ref).strip() for ref in possible_refs if ref]:
+                    return txn
+                    
+                txn_id = txn.get("txnid") or txn.get("referenceId") or txn.get("invoiceId") or ""
+                if txn_id and str(txn_id).startswith(short_name_expected + "-"):
+                    return txn
 
         # If only one transaction in the range (likely this client's), return it
         if len(txn_list) == 1:
@@ -738,6 +739,20 @@ def handle_payu_webhook():
             
         # Fallback: Extract from txnid or referenceId (e.g. SUB03346-240705120000)
         txn_id_str = str(txnid or data.get("referenceId") or "").strip()
+        
+        # ── Proactive API Query if Webhook omitted the reference fields ──
+        if not itr_name and not txn_id_str and log_txn_id:
+            api_txn = _query_payu_payment_link_txns_by_date(None, settings, log_txn_id)
+            if not api_txn:
+                api_txn = _query_payu_by_mihpayid(log_txn_id, settings)
+            if api_txn:
+                txn_id_str = str(
+                    api_txn.get("txnid") or api_txn.get("referenceId") or api_txn.get("invoiceId") or ""
+                ).strip()
+                # If API returned udf1, we can also use that directly
+                api_udf1 = str(api_txn.get("udf1") or api_txn.get("customerRefId") or "").strip()
+                if not itr_name and api_udf1 and frappe.db.exists("ITR Filing Submission", api_udf1):
+                    itr_name = api_udf1
         if not itr_name and txn_id_str:
             # txnid might be like SUB03398-240706001246 or just SUB03398
             short_name = txn_id_str.split("-")[0]
