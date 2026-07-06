@@ -473,7 +473,7 @@ def generate_payment_link_and_send(request_id):
         "isAmountFilledByCustomer": False,
         "subAmount": amt_val,
         "currency": "INR",
-        "description": "ITR Filing Service",
+        "description": f"ITR Filing Service - {doc.name}",
         "referenceId": txnid,
         "source": "API",
         "customerName": str(doc.full_name or "Client").strip()[:30],
@@ -1349,3 +1349,9 @@ def fix_module_def():
             delattr(frappe.local, "module_app")
     except Exception:
         pass
+
+@frappe.whitelist(allow_guest=True)
+def get_webhook_logs():
+    """Debug endpoint to see what exactly the webhook is sending"""
+    logs = frappe.db.get_all("Error Log", filters={"method": "PayU Webhook — Received"}, fields=["creation", "error"], order_by="creation desc", limit=5)
+    return logs

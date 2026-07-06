@@ -586,9 +586,14 @@ def _match_txn_to_itr(record, payu_txns):
             txn.get("udf1"), txn.get("udf2"), txn.get("referenceId"),
             txn.get("productinfo"), txn.get("invoiceId"), txn.get("customerRefId")
         ]
-        if record_name in [str(ref).strip() for ref in possible_refs if ref]:
-            return txn
-            
+        
+        for ref in possible_refs:
+            ref_str = str(ref or "").strip()
+            if "ITR Filing Service - " in ref_str:
+                ref_str = ref_str.split("ITR Filing Service - ")[-1].strip()
+            if record_name == ref_str:
+                return txn
+                
         # Match by txnid prefix
         txn_id = txn.get("txnid") or txn.get("referenceId") or txn.get("invoiceId") or ""
         if txn_id and str(txn_id).startswith(short_name_expected + "-"):
@@ -733,6 +738,11 @@ def handle_payu_webhook():
         ]
         for ref in possible_refs:
             ref_str = str(ref or "").strip()
+            
+            # Extract doc.name if we passed it in the description (which becomes productinfo)
+            if "ITR Filing Service - " in ref_str:
+                ref_str = ref_str.split("ITR Filing Service - ")[-1].strip()
+                
             if ref_str and frappe.db.exists("ITR Filing Submission", ref_str):
                 itr_name = ref_str
                 break
