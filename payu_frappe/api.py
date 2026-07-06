@@ -1228,6 +1228,9 @@ def bulk_reassign_rm(docnames, target_rm):
 
     updated = []
     failed = []
+    
+    # Fetch the actual name of the target RM
+    target_rm_name = frappe.db.get_value("User", target_rm, "full_name") or target_rm
 
     for name in docnames:
         try:
@@ -1236,6 +1239,7 @@ def bulk_reassign_rm(docnames, target_rm):
                 name,
                 {
                     "regional_manager": target_rm,
+                    "regional_manager_name": target_rm_name,
                     "assignment_method": "Manual Assign"
                 }
             )
